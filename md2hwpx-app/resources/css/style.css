@@ -8,6 +8,12 @@
 @font-face{font-family:'Noto Sans KR';src:url(../fonts/notosanskr-700-2.woff2) format('woff2');font-weight:700;font-style:normal;font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+2000-206F,U+2190-21FF,U+2212;}
 *{box-sizing:border-box;}
 html,body{height:100%;margin:0;}
+/* 부팅 스플래시: 테마 확정 전 라이트→다크 깜빡임을 가림. body.booted 가 붙으면 사라짐(브라우저=즉시, EXE=하이드레이션 후). */
+.boot-splash{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#1E56C6;transition:opacity .18s ease,visibility 0s linear .18s;}
+.boot-splash svg{width:44px;height:44px;animation:bootPulse 1s ease-in-out infinite;}
+@keyframes bootPulse{0%,100%{opacity:.55;transform:scale(.96);}50%{opacity:1;transform:scale(1);}}
+body.booted .boot-splash{opacity:0;visibility:hidden;pointer-events:none;}
+@media print{.boot-splash{display:none !important;}}
 body{
   --bar-bg:#eef2f7;--bar-fg:#1f2937;--accent:#2B6CE5;--accent-fg:#fff;   /* 강조색 = 로고 M 색과 통일 */
   --ed-bg:#f8fafc;--ed-fg:#334155;--ed-border:#e2e8f0;

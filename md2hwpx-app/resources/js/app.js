@@ -278,8 +278,11 @@
     /* 라이트/다크 셸 테마: 선택 상태를 localStorage에 저장하고 시작 시 복원.
        다크는 '설정 기억' 체크와 무관하게 항상 독립 저장(MDeautify와 동일). 기본=라이트. */
     var dark=$('stDark');
-    (function(){var KEY="mdocify_ui_mode",saved=null;try{saved=localStorage.getItem(KEY);}catch(e){}
-      var isDark=saved==="dark";document.body.classList.toggle('dark',isDark);if(dark)dark.checked=isDark;
+    (function(){var KEY="mdocify_ui_mode";
+      function apply(){var saved=null;try{saved=localStorage.getItem(KEY);}catch(e){}var isDark=saved==="dark";document.body.classList.toggle('dark',isDark);if(dark)dark.checked=isDark;}
+      apply();
+      /* EXE: settings-store 가 %APPDATA%\MDhwpxify\settings.json → localStorage 복원 후 재적용(비동기 하이드레이션) */
+      document.addEventListener('mdocify:settings-hydrated',apply);
       if(dark)dark.addEventListener('change',function(){var mode=dark.checked?"dark":"light";document.body.classList.toggle('dark',dark.checked);try{localStorage.setItem(KEY,mode);}catch(e){}});
     })();
     /* 설정(⚙) 모달 열기/닫기 (버전·업데이트 UI 는 아래 자동 업데이트 IIFE 가 tmAbout 에 채움 — MDeautify 와 동일) */
