@@ -1,0 +1,31 @@
+# ── 빌드 산출물 ──
+/release/
+/MDhwpxify.exe
+/MDhwpxify.zip
+md2hwpx-app/bin/
+md2hwpx-app/dist/
+md2hwpx-app/node_modules/
+
+# ── 테스트·기밀 데이터 (커밋/공개 금지) ──
+# testsample: 실제 신미정공 완료보고서(고객 기밀) — 절대 공개 금지
+/testsample/
+# 루트 진단/샘플 hwpx (_diag_*, sample 등)
+*.hwpx
+*.bak
+
+# ── 로컬 개발 설정 ──
+.claude/
+
+# ── 로그 ──
+*.log
+
+# ── 임시/상태 파일 ──
+.tmp/
+.storage/
+**/.storage/
+window_state.config.json
+
+# ── OS 부산물 ──
+Thumbs.db
+.DS_Store
+desktop.ini
