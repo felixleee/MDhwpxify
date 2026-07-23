@@ -12,7 +12,7 @@ body{
   --bar-bg:#eef2f7;--bar-fg:#1f2937;--accent:#2B6CE5;--accent-fg:#fff;   /* 강조색 = 로고 M 색과 통일 */
   --ed-bg:#f8fafc;--ed-fg:#334155;--ed-border:#e2e8f0;
   --pv-bg:#e5e7eb;--pane-head:#eef2f6;--pane-head-fg:#475569;
-  --drop-fg:#64748b;--brand:#1E56C6;--st-ok:#16a34a;--st-bad:#dc2626;   /* brand = 로고 M(#2B6CE5) 계열 진한색 */
+  --drop-fg:#64748b;--brand:#1E56C6;--st-ok:#16a34a;--st-bad:#dc2626;--st-warn:#d97706;   /* brand = 로고 M(#2B6CE5) 계열 진한색 */
   --doc-size:14px;--doc-font:"Noto Sans KR","Malgun Gothic","Segoe UI",sans-serif;
   --sb-thumb:#b8c0cc;--sb-track:#eef2f6;
   --sx-h:#0550ae;--sx-q:#116329;--sx-l:#8250df;--sx-c:#a31515;--sx-b:#953800;--sx-lk:#0a7ea4;
@@ -29,7 +29,7 @@ body.dark{
   --bar-bg:#1f2937;--bar-fg:#ffffff;--accent-fg:#fff;
   --ed-bg:#1e1e1e;--ed-fg:#d4d4d4;--ed-border:#0b0b0b;
   --pv-bg:#111827;--pane-head:#0f172a;--pane-head-fg:#94a3b8;
-  --drop-fg:#94a3b8;--st-ok:#4ade80;--st-bad:#f87171;
+  --drop-fg:#94a3b8;--st-ok:#4ade80;--st-bad:#f87171;--st-warn:#fbbf24;
   --sb-thumb:#3f4b5b;--sb-track:#1a2230;
   --sx-h:#569cd6;--sx-q:#6a9955;--sx-l:#c586c0;--sx-c:#ce9178;--sx-b:#d7ba7d;--sx-lk:#4ec9b0;
   --tm-card:#28323f;--tm-fg:#f1f5f9;--tm-fg2:#cbd5e1;--tm-muted:#94a3b8;--tm-close:#94a3b8;--tm-border:#3a4657;--tm-bhover:#4b5a6e;--tm-hover-bg:#334155;--tm-switch-off:#475569;--tm-knob:#e5e7eb;--tm-ring:rgba(255,255,255,.20);
@@ -289,9 +289,9 @@ body.loaded #fileBadge{display:inline-flex;}
 
 /* ===== 설정(⚙) 버튼 + 설정 모달 ===== */
 #bar button.icon-btn{padding:7px 9px;display:inline-flex;align-items:center;justify-content:center;}
-#settingsModal{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.32);}
+#settingsModal{position:fixed;z-index:60;}
 #settingsModal[hidden]{display:none;}
-#settingsModal .tm-card{background:var(--tm-card);color:var(--tm-fg);border:1px solid var(--tm-border);border-radius:12px;padding:18px 20px;box-shadow:0 12px 40px rgba(0,0,0,.35);width:340px;max-width:calc(100vw - 32px);}
+#settingsModal .tm-card{background:var(--tm-card);color:var(--tm-fg);border:1px solid var(--tm-border);border-radius:12px;padding:18px 20px;box-shadow:0 12px 40px rgba(0,0,0,.35);width:340px;max-width:calc(100vw - 32px);max-height:calc(100vh - 66px);overflow-y:auto;}
 #settingsModal .tm-head{display:flex;align-items:center;justify-content:space-between;margin:0 0 8px;}
 #settingsModal .tm-title{font-size:14px;font-weight:700;}
 #settingsModal .tm-close{border:0;background:none;font-size:18px;line-height:1;color:var(--tm-close);cursor:pointer;padding:2px 4px;}
@@ -300,22 +300,57 @@ body.loaded #fileBadge{display:inline-flex;}
 #settingsModal .tm-opt{display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:600;color:var(--tm-fg2);}
 #settingsModal .tm-sec-head{margin:0 0 10px;}
 #settingsModal .tm-sec-title{font-size:12px;font-weight:700;color:var(--tm-muted);}
-#settingsModal .st-about{display:flex;align-items:center;justify-content:space-between;gap:10px;}
-#settingsModal .st-ver{font-size:12.5px;color:var(--tm-fg2);}
-#settingsModal .st-about button{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--accent);border-radius:6px;padding:6px 11px;cursor:pointer;background:var(--accent);color:var(--accent-fg);}
-#settingsModal .st-about button:disabled{opacity:.55;cursor:default;}
-#settingsModal .st-upd{margin-top:10px;font-size:12.5px;color:var(--tm-fg2);line-height:1.55;}
-#settingsModal .st-upd a{color:var(--accent);}
-
-/* 업데이트 설치 진행 모달 + 설치 버튼 + 새버전 점 */
-#settingsModal .st-upd-act{display:flex;justify-content:flex-end;margin-top:10px;}
-#settingsModal .st-upd-act button{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--accent);border-radius:6px;padding:6px 11px;cursor:pointer;background:var(--accent);color:var(--accent-fg);}
-#settingsModal .st-upd-act button:disabled{opacity:.55;cursor:default;}
+/* 정보·업데이트 (MDeautify 구조 이식) */
+.tm-about{margin-top:12px;padding-top:12px;border-top:1px solid var(--tm-border);}
+.tm-about .tm-sec-head{display:flex;align-items:center;justify-content:space-between;margin:0;}
+.tm-about .tm-sec-title{font-size:12px;font-weight:700;color:var(--tm-fg2);}
+.tm-about-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;}
+.tm-ver{font-size:12px;color:var(--tm-muted);}
+.tm-ver b{color:var(--tm-fg2);font-weight:700;}
+#tmUpd{flex:0 0 auto;border:1px solid var(--tm-border);background:var(--tm-hover-bg);color:var(--tm-fg2);font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:6px;cursor:pointer;transition:background .12s,border-color .12s;}
+#tmUpd:hover{border-color:var(--tm-bhover,var(--accent));}
+#tmUpd:disabled{opacity:.6;cursor:default;}
+.tm-upd{margin-top:9px;}
+.tm-upd-msg{font-size:11.5px;line-height:1.5;color:var(--tm-fg2);}
+.tm-upd-msg.ok{color:var(--st-ok);}
+.tm-upd-msg.warn{color:var(--st-warn);}
+.tm-upd-msg.bad{color:var(--st-bad);}
+.tm-upd-msg b{color:var(--tm-fg);font-weight:800;}
+.tm-upd-act{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px;}
+#tmUpdLink{border:0;background:none;padding:0;font:inherit;font-size:11px;color:var(--accent);text-decoration:none;cursor:pointer;}
+#tmUpdLink:hover{text-decoration:underline;}
+#tmUpdGo{flex:0 0 auto;border:0;background:var(--accent);color:var(--accent-fg);font-size:11.5px;font-weight:700;padding:5px 12px;border-radius:6px;cursor:pointer;}
+#tmUpdGo:hover{filter:brightness(1.06);}
+#tmUpdGo:disabled{opacity:.6;cursor:default;}
+/* 설정 버튼 업데이트 점 */
 #bar button#btnSettings{position:relative;}
-#btnSettings.has-update::after{content:"";position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:#f59e0b;box-shadow:0 0 0 2px var(--bar-bg);}
+#btnSettings.has-update::after{content:"";position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:var(--st-warn);box-shadow:0 0 0 2px var(--bar-bg);}
 #updModal{position:fixed;inset:0;z-index:220;display:flex;align-items:center;justify-content:center;background:rgba(15,17,26,.5);}
 #updModal[hidden]{display:none;}
 #updModal .upd-card{background:var(--tm-card);color:var(--tm-fg);border:1px solid var(--tm-border);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.4);padding:24px 28px;display:flex;flex-direction:column;align-items:center;gap:14px;min-width:220px;}
 #updModal .upd-spin{width:30px;height:30px;border-radius:50%;border:3px solid color-mix(in srgb,var(--accent) 28%,transparent);border-top-color:var(--accent);animation:updspin .8s linear infinite;}
 #updModal .upd-msg{font-size:13px;font-weight:700;color:var(--tm-fg2);white-space:nowrap;}
 @keyframes updspin{to{transform:rotate(360deg);}}
+
+/* 릴리스 노트 모달 (GitHub 릴리스 body 를 marked 로 렌더 — MDeautify 구조 이식) */
+#notesModal{position:fixed;inset:0;z-index:210;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(15,17,26,.44);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);}
+#notesModal[hidden]{display:none;}
+#notesModal .nm-card{background:var(--tm-card);color:var(--tm-fg);border:1px solid var(--tm-border);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.4);width:520px;max-width:calc(100vw - 48px);max-height:calc(100vh - 96px);display:flex;flex-direction:column;overflow:hidden;}
+#notesModal .nm-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 18px;border-bottom:1px solid var(--tm-border);flex:0 0 auto;}
+#notesModal .nm-title{font-size:15px;font-weight:800;color:var(--tm-fg);}
+#notesModal .nm-body{flex:1 1 auto;min-height:0;padding:14px 20px 18px;overflow-y:auto;overscroll-behavior:contain;font-size:13px;line-height:1.6;color:var(--tm-fg2);}
+#notesModal .nm-body>:first-child{margin-top:0;}
+#notesModal .nm-body h1,#notesModal .nm-body h2{font-size:15px;font-weight:800;color:var(--tm-fg);margin:2px 0 10px;padding:0;border:0;}
+#notesModal .nm-body h3{font-size:12.5px;font-weight:800;color:var(--accent);margin:15px 0 6px;text-transform:none;letter-spacing:0;}
+#notesModal .nm-body ul{margin:6px 0;padding-left:20px;}
+#notesModal .nm-body li{margin:3px 0;}
+#notesModal .nm-body p{margin:6px 0;}
+#notesModal .nm-body code{font-family:var(--mono,ui-monospace,Consolas,monospace);font-size:.9em;background:var(--tm-hover-bg);padding:1px 5px;border-radius:4px;}
+#notesModal .nm-body a{color:var(--accent);}
+#notesModal .nm-body hr{border:0;border-top:1px solid var(--tm-border);margin:12px 0;}
+#notesModal .nm-loading,#notesModal .nm-err,#notesModal .nm-empty{color:var(--tm-muted);}
+#notesModal .nm-rel+.nm-rel{margin-top:16px;padding-top:16px;border-top:1px solid var(--tm-border);}
+#notesModal .nm-rel-head{display:flex;align-items:baseline;gap:9px;margin:0 0 8px;}
+#notesModal .nm-ver{font-size:15px;font-weight:800;color:var(--tm-fg);}
+#notesModal .nm-date{font-size:11.5px;font-weight:600;color:var(--tm-muted);}
+#notesModal .nm-rel>.nm-rel-head+*{margin-top:0;}
