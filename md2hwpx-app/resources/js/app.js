@@ -191,11 +191,14 @@
     r.readAsText(file,'utf-8');
   }
   function startBlank(){
-    $('editor').value='';curName='document';
-    window.__mdName=null;window.__fname='document';
+    /* 정부과제 완료보고서(서식 ⑫) 골격을 채워 시작 — 내용은 플레이스홀더(빈 양식). 없으면 빈 문서 폴백. */
+    var seed=(typeof window.GOV_REPORT_BLANK==='string')?window.GOV_REPORT_BLANK:'';
+    $('editor').value=seed;curName='완료보고서';
+    window.__mdName=null;window.__fname='완료보고서';
     document.body.classList.add('loaded');
+    $('editor').scrollTop=0;
     syncMirror();
-    renderPreview('',false);
+    renderPreview(seed,false);
     $('editor').focus();
   }
 
