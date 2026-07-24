@@ -78,9 +78,16 @@
   /* ---------- 소스(.content) 빌드 ---------- */
   function buildSource(text){
     var fm=parseFrontmatter(text),meta=fm.meta;
-    var srcmd=fixLooseLists(fm.body);
+    /* 스크롤 sync(방식 B)용 줄맵: srcmd 각 줄 → 원본 text 줄(0-based, 삽입줄=-1).
+       프론트매터 오프셋(F) + fixLooseLists 삽입줄을 추적. srcmd 결과 문자열은 기존과 동일. */
+    var _F=0,_fmM=text.match(/^---\s*\n([\s\S]*?)\n---\s*\n/);if(_fmM)_F=(_fmM[0].match(/\n/g)||[]).length;
+    var _bl=fm.body.split("\n"),_bo=[];for(var _bi=0;_bi<_bl.length;_bi++)_bo.push(_F+_bi);
+    var _isItem=function(s){return /^\s*([-*+]|\d+\.)\s+/.test(s);};
+    var _fl=[],_fo=[];   /* fixLooseLists 와 동일 알고리즘(줄맵 동반) */
+    for(var _j=0;_j<_bl.length;_j++){if(_isItem(_bl[_j])){var _p=_fl.length?_fl[_fl.length-1]:"";if(_p.trim()&&!_isItem(_p)){_fl.push("");_fo.push(-1);}}_fl.push(_bl[_j]);_fo.push(_bo[_j]);}
     var title=meta.title||meta["제목"]||"";
-    if(title)srcmd=srcmd.replace(/^\s*#\s+(.*)\r?\n/,function(m,h){return h.trim()===title.trim()?"":m;});
+    if(title){for(var _q=0;_q<_fl.length;_q++){if(_fl[_q].trim()===""){continue;}var _tm=_fl[_q].match(/^\s*#\s+(.*?)\s*$/);if(_tm&&_tm[1].trim()===title.trim()){_fl.splice(_q,1);_fo.splice(_q,1);}break;}}
+    var srcmd=_fl.join("\n"),srcMap=_fo;
     window.marked.setOptions({gfm:true,breaks:false});
     if(!window.marked.__delFix){window.marked.__delFix=1;window.marked.use({tokenizer:{del(src){var m=/^~~(?=\S)([\s\S]*?\S)~~/.exec(src);if(m){return {type:"del",raw:m[0],text:m[1],tokens:this.lexer.inlineTokens(m[1])};}if(src.charCodeAt(0)===126){return {type:"text",raw:"~",text:"~"};}return false;}}});}
     /* 들여쓰기 코드블록 감지 끔(펜스 ```는 유지) → 정부문서 들여쓴 하위항목이 다크 코드박스로 오인되지 않게. 산출물과 동일 규칙 */
@@ -125,6 +132,21 @@
       });})();
     src.querySelectorAll("code.language-mermaid").forEach(function(c){var pre=c.closest("pre")||c;var kind=window.DIAG?window.DIAG.detectKind(c.textContent):null;var fig=document.createElement("figure");if(kind){fig.innerHTML=window.DIAG.render(kind,c.textContent);}else{var box=document.createElement("div");box.className="diag-unsupported";var ti=document.createElement("div");ti.className="du-title";ti.textContent="지원하지 않는 다이어그램 (지원: flowchart · sequence · erDiagram · pie · state · class · gantt · journey · mindmap · timeline)";box.appendChild(ti);fig.appendChild(box);}pre.replaceWith(fig);});
     src.querySelectorAll("pre code[class*='language-']").forEach(function(c){var mm=(c.className||"").match(/language-([\w#+.-]+)/);c.innerHTML=hlCode(c.textContent,mm?mm[1]:"");});
+    /* 스크롤 sync(방식 B): 최상위 블록마다 원본 줄번호를 data-sl 로 태깅(marked 토큰 누적 줄수 → srcMap 로 원본 줄 역변환).
+       렌더 미출력 토큰(space/def)은 DOM 자식 1:1 대응에서 제외. 목록 항목·표 행은 세분 태깅(큰 블록 내부 드리프트 감소). */
+    try{
+      var _toks=window.marked.lexer(srcmd),_nl=function(s){return (s.match(/\n/g)||[]).length;};
+      var _toEd=function(fl){var o=srcMap[fl],j=fl;while((o==null||o<0)&&j<srcMap.length-1){j++;o=srcMap[j];}return (o==null||o<0)?0:o;};
+      var _info=[],_cum=0;
+      for(var _ti=0;_ti<_toks.length;_ti++){var _tk=_toks[_ti];if(_tk.type!=="space"&&_tk.type!=="def")_info.push({tok:_tk,fl:_cum});_cum+=_nl(_tk.raw);}
+      var _content=src.querySelector(".content"),_blks=_content?_content.children:[];
+      for(var _k=0;_k<_blks.length&&_k<_info.length;_k++){
+        var _el=_blks[_k],_t=_info[_k].tok,_f=_info[_k].fl;
+        _el.setAttribute("data-sl",_toEd(_f));
+        if(_t.type==="list"&&_t.items){var _lis=_el.children,_lc=_f,_li=0;for(var _ii=0;_ii<_t.items.length;_ii++){while(_li<_lis.length&&_lis[_li].tagName!=="LI")_li++;if(_li<_lis.length){_lis[_li].setAttribute("data-sl",_toEd(_lc));_li++;}_lc+=_nl(_t.items[_ii].raw);}}
+        else if(_t.type==="table"){var _trs=_el.querySelectorAll("tr");for(var _ri=0;_ri<_trs.length;_ri++)_trs[_ri].setAttribute("data-sl",_toEd(_f+(_ri===0?0:_ri+1)));}
+      }
+    }catch(e){}
     return src;
   }
 
@@ -177,7 +199,9 @@
     setHead("페이지 분할 중...");
     runPaged(src, keepScroll);
   }
-  function onEdit(){syncMirror();clearTimeout(debounceTimer);debounceTimer=setTimeout(function(){renderPreview($('editor').value,true);},350);}
+  /* 입력 시 색상 미러만 즉시 갱신, 무거운 미리보기 재생성은 입력을 멈춘 뒤 2초 후 1회(타이핑 중 재분할 깜빡임 방지) — MDeautify EDIT_DELAY=2000 과 동일 */
+  var EDIT_DELAY=2000;
+  function onEdit(){syncMirror();clearTimeout(debounceTimer);debounceTimer=setTimeout(function(){renderPreview($('editor').value,true);},EDIT_DELAY);}
 
   /* 이식된(별도 IIFE) 뱃지/드롭/ZIP 코드가 호출하는 브리지: 미리보기 재생성 + 편집기 텍스트 교체 */
   window.__render=function(text, keepScroll){ renderPreview(text, keepScroll); };
@@ -937,4 +961,46 @@ window.__resolveLocalImages=async function(src){
     if(seen!==CUR){try{localStorage.setItem("mdocify_seen_version",CUR);}catch(e){}}
   }
   document.addEventListener("mdocify:settings-ready",seenCheck);
+})();
+
+/* ===== MD 원본 ↔ 미리보기 스크롤 동기화 (방식 B, MDeautify 이식) =====
+   한쪽 스크롤 위치를 앵커쌍{ed:에디터 원본줄 Y, vw:미리보기 블록 Y} 선형보간으로 반대쪽에 반영.
+   lockUntil: 프로그램적 스크롤이 되돌려 트리거하는 피드백 루프 차단(짧은 창 동안 상호 이벤트 무시).
+   편집기 접힘(editor-collapsed) 시 비활성. 편집기=#editor, 색상 미러=#raw(.ln[data-ln]), 뷰어=#pages([data-sl]). */
+(function(){
+  var rawInput=document.getElementById("editor"),mirror=document.getElementById("raw"),viewer=document.getElementById("pages");
+  if(!rawInput||!mirror||!viewer)return;
+  var clock=(window.performance&&performance.now)?function(){return performance.now();}:function(){return +new Date();};
+  var lockUntil=0,cache=null,ckey="";
+  /* 앵커: [data-sl] 블록마다 {ed,vw}. 양 끝점(0,0)/(max,max) + 클램프 + vw 단조증가. 레이아웃 변화 시에만 재계산(캐시). */
+  function build(){
+    var seen={},A=[],mr=mirror.getBoundingClientRect(),vr=viewer.getBoundingClientRect(),vs=viewer.scrollTop,rs=mirror.scrollTop;
+    var bl=viewer.querySelectorAll("[data-sl]");
+    for(var i=0;i<bl.length;i++){var sl=+bl[i].getAttribute("data-sl");if(seen[sl])continue;
+      var ln=mirror.querySelector('.ln[data-ln="'+sl+'"]');if(!ln)continue;
+      var r=ln.getClientRects();if(!r.length)continue;
+      seen[sl]=1;
+      A.push({ed:r[0].top-mr.top+rs, vw:bl[i].getBoundingClientRect().top-vr.top+vs});
+    }
+    A.sort(function(a,b){return a.ed-b.ed;});
+    var edMax=rawInput.scrollHeight-rawInput.clientHeight,vwMax=viewer.scrollHeight-viewer.clientHeight;
+    A.unshift({ed:0,vw:0});A.push({ed:edMax,vw:vwMax});
+    for(var k=0;k<A.length;k++){A[k].ed=Math.max(0,Math.min(edMax,A[k].ed));A[k].vw=Math.max(0,Math.min(vwMax,A[k].vw));}
+    for(var m=1;m<A.length;m++){if(A[m].vw<A[m-1].vw)A[m].vw=A[m-1].vw;}
+    return A;
+  }
+  function anchors(){var k=viewer.querySelectorAll("[data-sl]").length+"|"+rawInput.scrollHeight+"|"+viewer.scrollHeight+"|"+rawInput.clientWidth+"|"+viewer.clientHeight;if(k!==ckey){cache=build();ckey=k;}return cache;}
+  function interp(A,fk,tk,v){for(var i=0;i<A.length-1;i++){var a=A[i],b=A[i+1];if(v>=a[fk]&&v<=b[fk]){var s=b[fk]-a[fk];return a[tk]+(s>0?(v-a[fk])/s:0)*(b[tk]-a[tk]);}}return v<=A[0][fk]?A[0][tk]:A[A.length-1][tk];}
+  var pvHead=document.querySelector(".pv-head");
+  function headH(){return pvHead?pvHead.offsetHeight:0;}   /* 뷰어 상단 스티키 헤더 높이 보정 */
+  function linkFn(from,to,fk,tk){from.addEventListener("scroll",function(){if(clock()<lockUntil)return;if(document.body.classList.contains("editor-collapsed"))return;var A=anchors();if(!A||A.length<2)return;
+    var h=headH();
+    var q=(from===viewer)?from.scrollTop+h:from.scrollTop;
+    var y=interp(A,fk,tk,q);if(y==null)return;
+    if(to===viewer)y=y-h;
+    lockUntil=clock()+80;to.scrollTop=Math.max(0,y);
+    if(to===rawInput){mirror.scrollTop=rawInput.scrollTop;mirror.scrollLeft=rawInput.scrollLeft;}
+  });}
+  linkFn(rawInput,viewer,"ed","vw");
+  linkFn(viewer,rawInput,"vw","ed");
 })();
