@@ -923,4 +923,18 @@ window.__resolveLocalImages=async function(src){
   if(go)go.addEventListener("click",install);
   window.__updateCheck=function(){return check(false,false);};   /* 톱니 열 때 자동 호출 → 캐시(TTL 10분) 재사용, 재호출 안 함 */
   setTimeout(function(){check(true,false);},2500);   /* 시작 후 조용히 1회 확인 → 캐시 채움. 새 버전이면 설정 버튼에 점 표시 */
+
+  /* 업데이트 후 첫 실행이면 릴리스 노트 모달 자동 표시 (MDeautify seenCheck 이식).
+     seen 버전은 mdocify_ 접두 키라 %APPDATA%\MDhwpxify\settings.json 에 영속(exe 교체에도 유지).
+     포트 자동(0)이라 localStorage 는 매 실행 비어 시작 → 설정 하이드레이션(settings-ready) 후 판정.
+     '업그레이드'만 표시(첫 설치 제외): seen 이 현재와 다르거나, seen 은 없지만 기존 설정키가 있으면(=이전 사용자) 표시. */
+  function seenCheck(){
+    if(!CUR)return;
+    var seen=null;try{seen=localStorage.getItem("mdocify_seen_version");}catch(e){}
+    var hadSettings=false;try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf("mdocify_")===0&&k!=="mdocify_seen_version"){hadSettings=true;break;}}}catch(e){}
+    var upgraded=(seen&&seen!==CUR)||(!seen&&hadSettings);
+    if(upgraded&&window.__showReleaseNotesAuto)window.__showReleaseNotesAuto(CUR);
+    if(seen!==CUR){try{localStorage.setItem("mdocify_seen_version",CUR);}catch(e){}}
+  }
+  document.addEventListener("mdocify:settings-ready",seenCheck);
 })();
