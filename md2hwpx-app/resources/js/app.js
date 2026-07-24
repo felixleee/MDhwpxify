@@ -293,8 +293,8 @@
       if(!btn||!modal)return;
       function open(){modal.hidden=false;
         var r=btn.getBoundingClientRect(),w=modal.offsetWidth||340,left=Math.max(8,Math.min(r.right-w,window.innerWidth-w-8));modal.style.top=(r.bottom+6)+'px';modal.style.left=left+'px';
-        /* 설정을 열면 자동으로 업데이트를 확인 → 버튼 클릭 없이 버전 결과·릴리스 노트·재시작 버튼이 바로 보이게 */
-        if(window.__updateCheck)window.__updateCheck();}
+        /* 새 버전 대기(⚙ 점) 중일 때만 자동 확인 → 결과·릴리스노트·재시작 바로 표시. 최신이면 '업데이트 확인' 누르기 전엔 숨김(MDeautify와 동일) */
+        if(btn.classList.contains('has-update')&&window.__updateCheck)window.__updateCheck();}
       function closeM(){modal.hidden=true;}
       btn.addEventListener('click',function(e){e.stopPropagation();modal.hidden?open():closeM();});
       if(close)close.addEventListener('click',closeM);
