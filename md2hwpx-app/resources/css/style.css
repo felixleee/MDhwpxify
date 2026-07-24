@@ -338,6 +338,13 @@ body.loaded #fileBadge{display:inline-flex;}
 #updModal .upd-msg{font-size:13px;font-weight:700;color:var(--tm-fg2);white-space:nowrap;}
 @keyframes updspin{to{transform:rotate(360deg);}}
 
+/* 미리보기 로딩 오버레이 (큰 파일 불러오기·페이지네이션 대기) */
+#previewWrap{position:relative;}
+#previewLoading{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:color-mix(in srgb,var(--pv-bg) 82%,transparent);backdrop-filter:blur(1px);-webkit-backdrop-filter:blur(1px);}
+#previewLoading[hidden]{display:none;}
+#previewLoading .pl-spin{width:34px;height:34px;border-radius:50%;border:3px solid color-mix(in srgb,var(--accent) 28%,transparent);border-top-color:var(--accent);animation:updspin .8s linear infinite;}
+#previewLoading .pl-msg{font-size:12.5px;font-weight:700;color:var(--tm-fg2);}
+
 /* 릴리스 노트 모달 (GitHub 릴리스 body 를 marked 로 렌더 — MDeautify 구조 이식) */
 #notesModal{position:fixed;inset:0;z-index:210;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(15,17,26,.44);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);}
 #notesModal[hidden]{display:none;}

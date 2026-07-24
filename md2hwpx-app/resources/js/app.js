@@ -145,7 +145,7 @@
     var ratio=(keepScroll&&vMax>0)?viewer.scrollTop/vMax:0;
     function restore(){var m=viewer.scrollHeight-viewer.clientHeight;viewer.scrollTop=keepScroll?ratio*m:0;}
     pages.innerHTML="";
-    if(!window.PagedModule||!window.PagedModule.Previewer){fallbackRender(src);restore();return;}
+    if(!window.PagedModule||!window.PagedModule.Previewer){fallbackRender(src);restore();hidePreviewLoading();return;}
     var blobUrl=null;try{blobUrl=URL.createObjectURL(new Blob([PAGED_CSS],{type:"text/css"}));}catch(e){}
     try{
       var prev=new window.PagedModule.Previewer();
@@ -156,13 +156,21 @@
         if(typeof window.applyHeader==="function")window.applyHeader();
         var n=pages.querySelectorAll(".pagedjs_page").length||((flow&&flow.total)||0);
         setHead("Total "+n+" page"+(n>1?"s":""));
-        restore();
-      }).catch(function(err){console.error(err);if(blobUrl){try{URL.revokeObjectURL(blobUrl);}catch(e){}}fallbackRender(src);restore();});
-    }catch(e){console.error(e);fallbackRender(src);restore();}
+        restore();hidePreviewLoading();
+      }).catch(function(err){console.error(err);if(blobUrl){try{URL.revokeObjectURL(blobUrl);}catch(e){}}fallbackRender(src);restore();hidePreviewLoading();});
+    }catch(e){console.error(e);fallbackRender(src);restore();hidePreviewLoading();}
   }
+
+  /* 미리보기 로딩 스피너: 200ms 지연 표시(빠른 렌더=타이핑엔 안 뜸, 큰 파일처럼 오래 걸릴 때만 표시) */
+  var _plTimer=null;
+  function showPreviewLoading(msg){var el=$('previewLoading');if(!el)return;var m=el.querySelector('.pl-msg');if(m&&msg)m.textContent=msg;clearTimeout(_plTimer);_plTimer=setTimeout(function(){el.hidden=false;},200);}
+  function hidePreviewLoading(){clearTimeout(_plTimer);var el=$('previewLoading');if(el)el.hidden=true;}
+  window.__previewLoadingHide=hidePreviewLoading;
 
   var debounceTimer=null;
   async function renderPreview(text, keepScroll){
+    showPreviewLoading('미리보기 준비 중…');
+    await new Promise(function(r){setTimeout(r,0);});   /* 스피너가 페인트될 기회를 준 뒤 무거운 작업 시작 */
     var src=buildSource(text);
     if(typeof window.__resolveLocalImages==="function"){try{await window.__resolveLocalImages(src);}catch(e){}}
     document.body.classList.add('loaded');
