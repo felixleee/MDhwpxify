@@ -359,13 +359,28 @@
     return out;
   }
 
+  /* 정부 양식 쪽 테두리: 원본 한글처럼 본문 전체를 4변 실선(borderFill 2) 1×1 표로 감쌈.
+     pageBreak="CELL" 이라 셀이 페이지를 넘기며 테두리가 매 페이지 반복 → 쪽 테두리 룩(미리보기 페이지 분할도 유지). */
+  function frameWrap(bodyParas) {
+    var W = CONTENT_W;
+    var body = bodyParas.join('') || textPara(' ', TPL.STYLE.normal, 1000);
+    var tc = '<hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="2">' +
+      '<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">' + body + '</hp:subList>' +
+      '<hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/>' +
+      '<hp:cellSz width="' + W + '" height="10000"/><hp:cellMargin left="510" right="510" top="141" bottom="141"/></hp:tc>';
+    var tbl = '<hp:tbl id="' + (++tblSeq) + '" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="1" rowCnt="1" colCnt="1" cellSpacing="0" borderFillIDRef="2" noAdjust="0">' +
+      '<hp:sz width="' + W + '" widthRelTo="ABSOLUTE" height="10000" heightRelTo="ABSOLUTE" protect="0"/>' +
+      '<hp:pos treatAsChar="0" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>' +
+      '<hp:outMargin left="283" right="283" top="283" bottom="283"/><hp:inMargin left="510" right="510" top="141" bottom="141"/>' +
+      '<hp:tr>' + tc + '</hp:tr></hp:tbl>';
+    return '<hp:p id="0" paraPrIDRef="' + TPL.STYLE.normal.para + '" styleIDRef="' + TPL.STYLE.normal.style + '" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="' + TPL.STYLE.normal.char + '">' + tbl + '<hp:t/></hp:run>' + lineseg(1000) + '</hp:p>';
+  }
   function buildSection0(bodyParas, pageFrame) {
     var st = TPL.STYLE.normal;
-    /* 정부 양식 쪽 테두리: 켜면 pageBorderFill 참조를 1(투명)→2(4변 실선)로 교체 */
-    var secpr = pageFrame ? TPL.SECPR.replace(/(<hp:pageBorderFill\b[^>]*?borderFillIDRef=")1(")/g, function (m, a, b) { return a + '2' + b; }) : TPL.SECPR;
-    var first = '<hp:p id="0" paraPrIDRef="' + st.para + '" styleIDRef="' + st.style + '" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="' + st.char + '">' + secpr + TPL.COLCTRL + '<hp:t/></hp:run>' + lineseg(1000) + '</hp:p>';
+    var first = '<hp:p id="0" paraPrIDRef="' + st.para + '" styleIDRef="' + st.style + '" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="' + st.char + '">' + TPL.SECPR + TPL.COLCTRL + '<hp:t/></hp:run>' + lineseg(1000) + '</hp:p>';
     if (!bodyParas.length) bodyParas = [textPara(' ', st, 1000)];
-    return '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><hs:sec ' + SEC_NS + '>' + first + bodyParas.join('') + '</hs:sec>';
+    var content = pageFrame ? frameWrap(bodyParas) : bodyParas.join('');
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><hs:sec ' + SEC_NS + '>' + first + content + '</hs:sec>';
   }
 
   /* ---------- 패키지 파일 (실제 한글 포맷) ---------- */

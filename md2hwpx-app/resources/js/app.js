@@ -52,8 +52,8 @@
   }
 
   var PAGED_CSS="@page{size:A4;margin:15mm 18mm;@top-center{content:' ';font-family:'Noto Sans KR','Malgun Gothic',sans-serif;font-size:9pt;color:#94a3b8;}@bottom-center{content:counter(page);font-family:'Noto Sans KR','Malgun Gothic',sans-serif;font-size:9pt;color:#94a3b8;}}.content h1,.content h2,.content h3,.content h4{break-after:avoid-page;-webkit-column-break-after:avoid;}.content tr,.content img,.content svg,.content figure,.content pre,.content blockquote{break-inside:avoid;}.content table,.content ul,.content ol{break-inside:auto;}.content thead{break-after:avoid;}.pb-before{break-before:page;}.cover{break-after:page;}.content p,.content li{orphans:2;widows:2;}";
-  /* 정부 양식 쪽 테두리(미리보기): 각 페이지 종이 안쪽에 4변 프레임. frontmatter '쪽테두리: 있음' 이면 주입(hwpx 출력의 pageBorderFill 과 대응) */
-  var PAGE_FRAME_CSS=".pagedjs_sheet{position:relative;}.pagedjs_sheet::after{content:'';position:absolute;left:5mm;top:5mm;right:5mm;bottom:5mm;border:0.4mm solid #111;pointer-events:none;}";
+  /* 정부 양식 쪽 테두리(미리보기): 본문 영역(=@page 여백 15/18mm) 경계에 4변 프레임 — hwpx 출력의 본문 래퍼 표 테두리(0.12mm)와 위치·두께를 맞춤. frontmatter '쪽테두리: 있음' 이면 주입 */
+  var PAGE_FRAME_CSS=".pagedjs_sheet{position:relative;}.pagedjs_sheet::after{content:'';position:absolute;top:15mm;bottom:15mm;left:18mm;right:18mm;border:0.12mm solid #000;pointer-events:none;box-sizing:border-box;}";
   var pvFrame=false;
 
   /* ---------- 경량 코드 구문 강조 (VSCode Dark 계열, MDeautify와 동일) ---------- */
