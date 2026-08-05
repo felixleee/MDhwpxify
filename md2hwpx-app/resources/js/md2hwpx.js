@@ -340,7 +340,7 @@
     return '<hp:p id="0" paraPrIDRef="' + TPL.STYLE.normal.para + '" styleIDRef="' + TPL.STYLE.normal.style + '" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="' + TPL.STYLE.normal.char + '">' + tbl + '<hp:t/></hp:run>' + lineseg(1000) + '</hp:p>';
   }
   function coverParas(meta) {
-    var special = { title: 1, subtitle: 1, '제목': 1, '부제': 1, '서식': 1, form: 1, kicker: 1, '사업명': 1 };
+    var special = { title: 1, subtitle: 1, '제목': 1, '부제': 1, '서식': 1, form: 1, kicker: 1, '사업명': 1, '쪽테두리': 1, '테두리': 1, pageBorder: 1 };
     var title = meta.title || meta['제목'] || '';
     var subtitle = meta.subtitle || meta['부제'] || '';
     var form = meta['서식'] || meta.form || '';
@@ -359,9 +359,11 @@
     return out;
   }
 
-  function buildSection0(bodyParas) {
+  function buildSection0(bodyParas, pageFrame) {
     var st = TPL.STYLE.normal;
-    var first = '<hp:p id="0" paraPrIDRef="' + st.para + '" styleIDRef="' + st.style + '" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="' + st.char + '">' + TPL.SECPR + TPL.COLCTRL + '<hp:t/></hp:run>' + lineseg(1000) + '</hp:p>';
+    /* 정부 양식 쪽 테두리: 켜면 pageBorderFill 참조를 1(투명)→2(4변 실선)로 교체 */
+    var secpr = pageFrame ? TPL.SECPR.replace(/(<hp:pageBorderFill\b[^>]*?borderFillIDRef=")1(")/g, function (m, a, b) { return a + '2' + b; }) : TPL.SECPR;
+    var first = '<hp:p id="0" paraPrIDRef="' + st.para + '" styleIDRef="' + st.style + '" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="' + st.char + '">' + secpr + TPL.COLCTRL + '<hp:t/></hp:run>' + lineseg(1000) + '</hp:p>';
     if (!bodyParas.length) bodyParas = [textPara(' ', st, 1000)];
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><hs:sec ' + SEC_NS + '>' + first + bodyParas.join('') + '</hs:sec>';
   }
@@ -387,6 +389,7 @@
     TPL = window.HWPX_TPL;
 
     var fm = parseFrontmatter(md || ''), meta = fm.meta, body = fm.body;
+    var pageFrame = /있음|있다|true|1|on|y/i.test(String(meta['쪽테두리'] || meta['테두리'] || meta['pageBorder'] || ''));
     var title = meta.title || meta['제목'] || '';
     var subtitle = meta.subtitle || meta['부제'] || '';
     if (title) body = body.replace(/^\s*#\s+(.*)\r?\n/, function (m0, h) { return h.trim() === title.trim() ? '' : m0; });
@@ -404,7 +407,7 @@
     }
     blocks(tokens, bodyParas);
 
-    var section0 = buildSection0(bodyParas);
+    var section0 = buildSection0(bodyParas, pageFrame);
     var prvText = (title ? title + '\n' : '') + tokens.map(function (t) { return (t.type === 'paragraph' || t.type === 'heading') ? inlineText(t.tokens) : ''; }).filter(Boolean).join('\n').slice(0, 2000);
 
     var z = new JSZip();

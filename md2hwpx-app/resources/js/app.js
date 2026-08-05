@@ -45,13 +45,16 @@
   }
   function buildCover(meta){
     var title=meta.title||meta["제목"]||"",subtitle=meta.subtitle||meta["부제"]||"",kicker=meta["사업명"]||meta.kicker||"";
-    var special={"title":1,"subtitle":1,"제목":1,"부제":1,"사업명":1,"kicker":1};var rows="";
+    var special={"title":1,"subtitle":1,"제목":1,"부제":1,"사업명":1,"kicker":1,"쪽테두리":1,"테두리":1,"pageBorder":1};var rows="";
     Object.keys(meta).forEach(function(k){if(special[k])return;rows+="<tr><td class='k'>"+esc(k)+"</td><td>"+esc(meta[k])+"</td></tr>";});
     if(!title&&!subtitle&&!rows)return"";
     return "<div class='cover'>"+(kicker?"<div class='kicker'>"+esc(kicker)+"</div>":"")+"<h1>"+esc(title)+"</h1><div class='st'>"+esc(subtitle)+"</div><div class='bar'></div>"+(rows?"<table>"+rows+"</table>":"")+"</div>";
   }
 
   var PAGED_CSS="@page{size:A4;margin:15mm 18mm;@top-center{content:' ';font-family:'Noto Sans KR','Malgun Gothic',sans-serif;font-size:9pt;color:#94a3b8;}@bottom-center{content:counter(page);font-family:'Noto Sans KR','Malgun Gothic',sans-serif;font-size:9pt;color:#94a3b8;}}.content h1,.content h2,.content h3,.content h4{break-after:avoid-page;-webkit-column-break-after:avoid;}.content tr,.content img,.content svg,.content figure,.content pre,.content blockquote{break-inside:avoid;}.content table,.content ul,.content ol{break-inside:auto;}.content thead{break-after:avoid;}.pb-before{break-before:page;}.cover{break-after:page;}.content p,.content li{orphans:2;widows:2;}";
+  /* 정부 양식 쪽 테두리(미리보기): 각 페이지 종이 안쪽에 4변 프레임. frontmatter '쪽테두리: 있음' 이면 주입(hwpx 출력의 pageBorderFill 과 대응) */
+  var PAGE_FRAME_CSS=".pagedjs_sheet{position:relative;}.pagedjs_sheet::after{content:'';position:absolute;left:5mm;top:5mm;right:5mm;bottom:5mm;border:0.4mm solid #111;pointer-events:none;}";
+  var pvFrame=false;
 
   /* ---------- 경량 코드 구문 강조 (VSCode Dark 계열, MDeautify와 동일) ---------- */
   function hlCode(src, lang){
@@ -82,6 +85,7 @@
   /* ---------- 소스(.content) 빌드 ---------- */
   function buildSource(text){
     var fm=parseFrontmatter(text),meta=fm.meta;
+    pvFrame=/있음|있다|true|1|on|y/i.test(String(meta['쪽테두리']||meta['테두리']||meta['pageBorder']||''));   /* 정부 양식 쪽 테두리 토글 */
     /* 스크롤 sync(방식 B)용 줄맵: srcmd 각 줄 → 원본 text 줄(0-based, 삽입줄=-1).
        프론트매터 오프셋(F) + fixLooseLists 삽입줄을 추적. srcmd 결과 문자열은 기존과 동일. */
     var _F=0,_fmM=text.match(/^---\s*\n([\s\S]*?)\n---\s*\n/);if(_fmM)_F=(_fmM[0].match(/\n/g)||[]).length;
@@ -175,7 +179,7 @@
     var blobUrl=null;try{blobUrl=URL.createObjectURL(new Blob([PAGED_CSS],{type:"text/css"}));}catch(e){}
     try{
       var prev=new window.PagedModule.Previewer();
-      prev.preview("<style>"+PAGED_CSS+"</style>"+src.innerHTML, blobUrl?[blobUrl]:[], pages).then(function(flow){
+      prev.preview("<style>"+PAGED_CSS+(pvFrame?PAGE_FRAME_CSS:"")+"</style>"+src.innerHTML, blobUrl?[blobUrl]:[], pages).then(function(flow){
         if(blobUrl){try{URL.revokeObjectURL(blobUrl);}catch(e){}}
         repeatTableHeaders(pages);
         if(typeof window.applyFooter==="function")window.applyFooter();
