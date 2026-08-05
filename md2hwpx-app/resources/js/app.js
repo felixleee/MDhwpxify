@@ -4,7 +4,11 @@
   'use strict';
 
   var TEMPLATES = { clean: window.TPL_CLEAN };
-  var curTemplate = 'clean';
+  var curTemplate = 'clean';   /* 출력(.hwpx) 렌더 템플릿 — 현재 clean 하나(모든 문서 공통) */
+  /* 문서 골격('빈 양식으로 시작') 템플릿: tplSelect 로 선택. 출력은 항상 clean. */
+  var DOC_TEMPLATES = { 'gov-report': function(){return window.GOV_REPORT_BLANK;}, 'gov-manual': function(){return window.GOV_MANUAL_BLANK;} };
+  var DOC_NAMES = { 'gov-report': '완료보고서', 'gov-manual': '사용자매뉴얼' };
+  var curDoc = 'gov-report';
   var curName = 'document';
   var $ = function (id) { return document.getElementById(id); };
 
@@ -223,10 +227,11 @@
     r.readAsText(file,'utf-8');
   }
   function startBlank(){
-    /* 정부과제 완료보고서(서식 ⑫) 골격을 채워 시작 — 내용은 플레이스홀더(빈 양식). 없으면 빈 문서 폴백. */
-    var seed=(typeof window.GOV_REPORT_BLANK==='string')?window.GOV_REPORT_BLANK:'';
-    $('editor').value=seed;curName='완료보고서';
-    window.__mdName=null;window.__fname='완료보고서';
+    /* 선택된 문서 골격(tplSelect)으로 시작 — 내용은 플레이스홀더(빈 양식). 없으면 빈 문서 폴백. */
+    var fn=DOC_TEMPLATES[curDoc],seed=(fn&&typeof fn()==='string')?fn():'';
+    var nm=DOC_NAMES[curDoc]||'document';
+    $('editor').value=seed;curName=nm;
+    window.__mdName=null;window.__fname=nm;
     document.body.classList.add('loaded');
     $('editor').scrollTop=0;
     syncMirror();
@@ -309,7 +314,7 @@
     var open=$('btnOpen');if(open)open.addEventListener('click',function(){if(window.__nativeOpen)window.__nativeOpen();else $('fileInput').click();});
     var blank=$('btnBlank');if(blank)blank.addEventListener('click',startBlank);
     $('btnSave').addEventListener('click',saveDocx);
-    var sel=$('tplSelect');if(sel)sel.addEventListener('change',function(){curTemplate=sel.value;});
+    var sel=$('tplSelect');if(sel){curDoc=sel.value;sel.addEventListener('change',function(){curDoc=sel.value;});}   /* 문서 골격 선택(출력 템플릿은 clean 고정) */
     /* 라이트/다크 셸 테마: 선택 상태를 localStorage에 저장하고 시작 시 복원.
        다크는 '설정 기억' 체크와 무관하게 항상 독립 저장(MDeautify와 동일). 기본=라이트. */
     var dark=$('stDark');
