@@ -10,7 +10,10 @@
  */
 (function () {
   'use strict';
-  var CONTENT_W = 49324;   // 본문폭 HWPUNIT (pagePr 59528 - 좌우여백 5102*2)
+  var BASE_CONTENT_W = 49324;   // 본문폭 HWPUNIT (pagePr 59528 - 좌우여백 5102*2)
+  var CONTENT_W = BASE_CONTENT_W;   // 쪽 테두리 시 프레임 안쪽 여백만큼 축소됨(convert에서 설정)
+  var FRAME_PAD = 1300;   // 쪽 테두리 프레임 좌우 안쪽 여백(HWPUNIT ≈4.6mm)
+  var TEXT_H = 75684;     // 본문 세로 높이(page 84188 - 상하여백 4252*2) — 프레임이 페이지를 채우도록
   var TPL = null;
 
   function xmlEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -360,27 +363,29 @@
   }
 
   /* 정부 양식 쪽 테두리: 원본 한글처럼 본문 전체를 4변 실선(borderFill 2) 1×1 표로 감쌈.
-     pageBreak="CELL" 이라 셀이 페이지를 넘기며 테두리가 매 페이지 반복 → 쪽 테두리 룩(미리보기 페이지 분할도 유지). */
-  function frameWrap(bodyParas) {
-    var W = CONTENT_W;
+     - pageBreak="CELL" → 셀이 페이지를 넘기며 테두리 매 페이지 반복(미리보기 분할도 유지)
+     - 외곽폭=본문 전체폭, 셀 좌우 여백=FRAME_PAD(안쪽 여백), 셀 높이=TEXT_H(페이지를 채움)
+     - 첫 문단(secPr 보유)에 바로 임베드 → 프레임 위 빈 줄 없이 상단부터 시작 */
+  function frameTbl(bodyParas) {
+    var OUT_W = BASE_CONTENT_W;
     var body = bodyParas.join('') || textPara(' ', TPL.STYLE.normal, 1000);
-    var tc = '<hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="2">' +
+    var tc = '<hp:tc name="" header="0" hasMargin="1" protect="0" editable="0" dirty="0" borderFillIDRef="2">' +
       '<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">' + body + '</hp:subList>' +
       '<hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/>' +
-      '<hp:cellSz width="' + W + '" height="10000"/><hp:cellMargin left="510" right="510" top="141" bottom="141"/></hp:tc>';
-    var tbl = '<hp:tbl id="' + (++tblSeq) + '" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="1" rowCnt="1" colCnt="1" cellSpacing="0" borderFillIDRef="2" noAdjust="0">' +
-      '<hp:sz width="' + W + '" widthRelTo="ABSOLUTE" height="10000" heightRelTo="ABSOLUTE" protect="0"/>' +
+      '<hp:cellSz width="' + OUT_W + '" height="' + TEXT_H + '"/><hp:cellMargin left="' + FRAME_PAD + '" right="' + FRAME_PAD + '" top="283" bottom="283"/></hp:tc>';
+    return '<hp:tbl id="' + (++tblSeq) + '" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="0" rowCnt="1" colCnt="1" cellSpacing="0" borderFillIDRef="2" noAdjust="0">' +
+      '<hp:sz width="' + OUT_W + '" widthRelTo="ABSOLUTE" height="' + TEXT_H + '" heightRelTo="ABSOLUTE" protect="0"/>' +
       '<hp:pos treatAsChar="0" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>' +
-      '<hp:outMargin left="283" right="283" top="283" bottom="283"/><hp:inMargin left="510" right="510" top="141" bottom="141"/>' +
+      '<hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:inMargin left="0" right="0" top="0" bottom="0"/>' +
       '<hp:tr>' + tc + '</hp:tr></hp:tbl>';
-    return '<hp:p id="0" paraPrIDRef="' + TPL.STYLE.normal.para + '" styleIDRef="' + TPL.STYLE.normal.style + '" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="' + TPL.STYLE.normal.char + '">' + tbl + '<hp:t/></hp:run>' + lineseg(1000) + '</hp:p>';
   }
   function buildSection0(bodyParas, pageFrame) {
     var st = TPL.STYLE.normal;
-    var first = '<hp:p id="0" paraPrIDRef="' + st.para + '" styleIDRef="' + st.style + '" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="' + st.char + '">' + TPL.SECPR + TPL.COLCTRL + '<hp:t/></hp:run>' + lineseg(1000) + '</hp:p>';
     if (!bodyParas.length) bodyParas = [textPara(' ', st, 1000)];
-    var content = pageFrame ? frameWrap(bodyParas) : bodyParas.join('');
-    return '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><hs:sec ' + SEC_NS + '>' + first + content + '</hs:sec>';
+    var firstInner = pageFrame ? (frameTbl(bodyParas) + '<hp:t/>') : '<hp:t/>';
+    var first = '<hp:p id="0" paraPrIDRef="' + st.para + '" styleIDRef="' + st.style + '" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="' + st.char + '">' + TPL.SECPR + TPL.COLCTRL + firstInner + '</hp:run>' + lineseg(1000) + '</hp:p>';
+    var rest = pageFrame ? '' : bodyParas.join('');
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><hs:sec ' + SEC_NS + '>' + first + rest + '</hs:sec>';
   }
 
   /* ---------- 패키지 파일 (실제 한글 포맷) ---------- */
@@ -405,6 +410,7 @@
 
     var fm = parseFrontmatter(md || ''), meta = fm.meta, body = fm.body;
     var pageFrame = /있음|있다|true|1|on|y/i.test(String(meta['쪽테두리'] || meta['테두리'] || meta['pageBorder'] || ''));
+    CONTENT_W = pageFrame ? (BASE_CONTENT_W - 2 * FRAME_PAD) : BASE_CONTENT_W;   /* 프레임 안쪽 폭으로 본문·표 생성 */
     var title = meta.title || meta['제목'] || '';
     var subtitle = meta.subtitle || meta['부제'] || '';
     if (title) body = body.replace(/^\s*#\s+(.*)\r?\n/, function (m0, h) { return h.trim() === title.trim() ? '' : m0; });
