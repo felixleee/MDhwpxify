@@ -80,6 +80,19 @@ body.dark{
 #pages{flex:1 1 auto;min-height:0;overflow:auto;padding:24px 12px;scrollbar-width:thin;scrollbar-color:var(--sb-thumb) var(--sb-track);}
 #pages .paper{width:210mm;box-sizing:border-box;background:#fff;margin:0 auto;padding:18mm 15mm;box-shadow:0 3px 14px rgba(0,0,0,.28);}
 #pages .pagedjs_page{background:#fff;box-shadow:0 4px 16px rgba(0,0,0,.3);margin:0 auto 34px !important;}
+/* 정부 양식 테두리(미리보기): 본문 영역(.pagedjs_page_content = @page 여백 안쪽) 경계에 4변 프레임(inset box-shadow — .pagedjs_page 는 position 미지정이라 ::after 안 먹음). 본문은 프레임 안쪽으로 좌우 패딩(산출물 프레임 표·안쪽여백과 대응) */
+body.mdocify-frame #pages .pagedjs_page_content{box-shadow:inset 0 0 0 0.15mm #000 !important;}
+body.mdocify-frame #pages .pagedjs_page_content .content{box-sizing:border-box;padding-left:5mm !important;padding-right:5mm !important;}
+/* 산출물(한글)은 문단 paraPr 여백=0(줄높이로만 간격)이라 미리보기 블록 여백을 촘촘하게 맞춤 — 특히 표 뒤 간격 */
+body.mdocify-frame #pages .content p{margin:4px 0;}
+body.mdocify-frame #pages .content ul,body.mdocify-frame #pages .content ol{margin:4px 0;}
+body.mdocify-frame #pages .content li{margin:1px 0;}
+body.mdocify-frame #pages .content table{margin:4px 0;}
+/* 번호목록을 산출물처럼 'N)' 로(기본 ol 은 'N.') */
+@counter-style mdocify-paren{system:extends decimal;suffix:") ";}
+body.mdocify-frame #pages .content ol{list-style-type:mdocify-paren;}
+/* 표 셀 안쪽 여백을 산출물 cellMargin 360(≈1.3mm 사방)에 맞춤 */
+body.mdocify-frame #pages .content td,body.mdocify-frame #pages .content th{padding:1.3mm;}
 #pages .pagedjs_pages{display:block;}
 .pagedjs_page_content > *:first-child{margin-top:0 !important;}
 .pagedjs_page_content .content{margin-top:0 !important;}
@@ -262,7 +275,7 @@ body.loaded #fileBadge{display:inline-flex;}
 
 /* ===== 정부 양식 미리보기 테마 (hwpx 산출물과 룩 일치) ===== */
 /* hwpx charPr 절대 크기로 일치: 본문10pt·목록(본문단계)12pt·제목17/14/13/12pt·표10pt, 줄간격160% */
-.content{font-family:"함초롬바탕","맑은 고딕","Malgun Gothic",sans-serif;color:#000;font-size:10pt;line-height:1.6;}
+.content{font-family:"함초롬바탕","맑은 고딕","Malgun Gothic",sans-serif;color:#000;font-size:10pt;line-height:1.45;}   /* 줄높이: 스펙 160%지만 한글 실제 렌더가 더 촘촘 → 쪽수 일치용 보정(1.6→1.45, 캘리브레이션 중) */
 .content p{font-size:10pt;margin:2px 0;white-space:pre-wrap;}   /* 촘촘한 간격 + 앞 공백 보존(산출물처럼 '-' 들여쓰기 유지, 줄바꿈 시 여백 복귀) */
 .content li{margin:1px 0;}
 .content td p,.content th p{margin:0;}   /* 셀 내부 줄바꿈 문단은 여백 0(줄바꿈만) */
@@ -295,6 +308,16 @@ body.loaded #fileBadge{display:inline-flex;}
 
 /* ===== 설정(⚙) 버튼 + 설정 모달 ===== */
 #bar button.icon-btn{padding:7px 9px;display:inline-flex;align-items:center;justify-content:center;}
+#docSetModal{position:fixed;z-index:60;}
+#docSetModal[hidden]{display:none;}
+#docSetModal .tm-card{background:var(--tm-card);color:var(--tm-fg);border:1px solid var(--tm-border);border-radius:12px;padding:16px 18px;box-shadow:0 12px 40px rgba(0,0,0,.35);width:300px;max-width:calc(100vw - 32px);}
+#docSetModal .tm-head{display:flex;align-items:center;justify-content:space-between;margin:0 0 6px;}
+#docSetModal .tm-title{font-size:14px;font-weight:700;}
+#docSetModal .tm-close{border:0;background:none;font-size:18px;line-height:1;color:var(--tm-close);cursor:pointer;padding:2px 4px;}
+#docSetModal .st-sec{padding:8px 0 2px;border-top:1px solid var(--tm-border);}
+#docSetModal .tm-opt{display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:600;color:var(--tm-fg2);margin:10px 0;}
+#docSetModal .tm-opt label{cursor:pointer;}
+#docSetModal select{font:inherit;font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--tm-border);background:var(--tm-card);color:var(--tm-fg);cursor:pointer;}
 #settingsModal{position:fixed;z-index:60;}
 #settingsModal[hidden]{display:none;}
 #settingsModal .tm-card{background:var(--tm-card);color:var(--tm-fg);border:1px solid var(--tm-border);border-radius:12px;padding:18px 20px;box-shadow:0 12px 40px rgba(0,0,0,.35);width:340px;max-width:calc(100vw - 32px);max-height:calc(100vh - 66px);overflow-y:auto;}

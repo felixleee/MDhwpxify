@@ -9,6 +9,8 @@
   var DOC_TEMPLATES = { 'gov-report': function(){return window.GOV_REPORT_BLANK;}, 'gov-manual': function(){return window.GOV_MANUAL_BLANK;} };
   var DOC_NAMES = { 'gov-report': '완료보고서', 'gov-manual': '사용자매뉴얼' };
   var curDoc = 'gov-report';
+  /* 문서 설정(문서 설정 모달): 테두리(내용 감싸는 1×1 표 틀). frontmatter 대신 UI 로 제어. */
+  var docOpts = { frame: true };
   var curName = 'document';
   var $ = function (id) { return document.getElementById(id); };
 
@@ -51,9 +53,8 @@
     return "<div class='cover'>"+(kicker?"<div class='kicker'>"+esc(kicker)+"</div>":"")+"<h1>"+esc(title)+"</h1><div class='st'>"+esc(subtitle)+"</div><div class='bar'></div>"+(rows?"<table>"+rows+"</table>":"")+"</div>";
   }
 
-  var PAGED_CSS="@page{size:A4;margin:15mm 18mm;@top-center{content:' ';font-family:'Noto Sans KR','Malgun Gothic',sans-serif;font-size:9pt;color:#94a3b8;}@bottom-center{content:counter(page);font-family:'Noto Sans KR','Malgun Gothic',sans-serif;font-size:9pt;color:#94a3b8;}}.content h1,.content h2,.content h3,.content h4{break-after:avoid-page;-webkit-column-break-after:avoid;}.content tr,.content img,.content svg,.content figure,.content pre,.content blockquote{break-inside:avoid;}.content table,.content ul,.content ol{break-inside:auto;}.content thead{break-after:avoid;}.pb-before{break-before:page;}.cover{break-after:page;}.content p,.content li{orphans:2;widows:2;}";
-  /* 정부 양식 쪽 테두리(미리보기): 본문 영역(=@page 여백 15/18mm) 경계에 4변 프레임 — hwpx 출력의 본문 래퍼 표 테두리(0.12mm)와 위치·두께를 맞춤. frontmatter '쪽테두리: 있음' 이면 주입 */
-  var PAGE_FRAME_CSS=".pagedjs_sheet{position:relative;}.pagedjs_sheet::after{content:'';position:absolute;top:15mm;bottom:15mm;left:18mm;right:18mm;border:0.12mm solid #000;pointer-events:none;box-sizing:border-box;}";
+  var PAGED_CSS="@page{size:A4;margin:16mm 18mm;@top-center{content:' ';font-family:'Noto Sans KR','Malgun Gothic',sans-serif;font-size:9pt;color:#94a3b8;}@bottom-center{content:counter(page);font-family:'함초롬바탕','Malgun Gothic',sans-serif;font-size:10pt;color:#333;}}.content h1,.content h2,.content h3,.content h4{break-after:avoid-page;-webkit-column-break-after:avoid;}.content tr,.content img,.content svg,.content figure,.content pre,.content blockquote{break-inside:avoid;}.content ul,.content ol{break-inside:auto;}.content table{break-inside:avoid;}.content thead{break-after:avoid;}.pb-before{break-before:page;}.cover{break-after:page;}.content p,.content li{orphans:2;widows:2;}";
+  /* 정부 양식 쪽 테두리(미리보기): body.mdocify-frame 일 때 style.css 가 .pagedjs_* chrome 에 프레임+여백 적용 */
   var pvFrame=false;
 
   /* ---------- 경량 코드 구문 강조 (VSCode Dark 계열, MDeautify와 동일) ---------- */
@@ -85,7 +86,8 @@
   /* ---------- 소스(.content) 빌드 ---------- */
   function buildSource(text){
     var fm=parseFrontmatter(text),meta=fm.meta;
-    pvFrame=/있음|있다|true|1|on|y/i.test(String(meta['쪽테두리']||meta['테두리']||meta['pageBorder']||''));   /* 정부 양식 쪽 테두리 토글 */
+    pvFrame=!!docOpts.frame;   /* 테두리: 문서 설정 모달로 제어 */
+    document.body.classList.toggle('mdocify-frame',pvFrame);   /* 프레임 CSS는 메인 style.css에서 .pagedjs_* chrome 에 적용(주입 X) */
     /* 스크롤 sync(방식 B)용 줄맵: srcmd 각 줄 → 원본 text 줄(0-based, 삽입줄=-1).
        프론트매터 오프셋(F) + fixLooseLists 삽입줄을 추적. srcmd 결과 문자열은 기존과 동일. */
     var _F=0,_fmM=text.match(/^---\s*\n([\s\S]*?)\n---\s*\n/);if(_fmM)_F=(_fmM[0].match(/\n/g)||[]).length;
@@ -129,6 +131,15 @@
     var src=$('src');
     src.innerHTML=buildCover(meta)+"<div class='content'>"+window.marked.parse(srcmd)+"</div>";
     src.querySelectorAll(".content a[href]").forEach(function(a){a.setAttribute("target","_blank");a.setAttribute("rel","noopener noreferrer");});
+    /* 표 헤더(첫 행이 전부 th·rowspan 없음)를 <thead>로 감싸 Paged.js가 페이지마다 헤더 반복(산출물 repeatHeader와 동일) → 헤더 고아·표 중복 방지 */
+    src.querySelectorAll(".content table").forEach(function(t){
+      if(t.querySelector("thead"))return;
+      var body=t.querySelector("tbody")||t, rows=body.querySelectorAll(":scope > tr"), first=rows[0];
+      /* 첫 행이 전부 th·rowspan 없음 + 뒤에 본문 행이 실제로 있을 때만 thead화(표지 등 1행짜리 표는 제외) */
+      if(rows.length>1 && first && first.querySelector("th") && !first.querySelector("td") && !first.querySelector("[rowspan]")){
+        var thead=document.createElement("thead");thead.appendChild(first);t.insertBefore(thead,body);
+      }
+    });
     /* 정부 양식 미리보기: 헤딩 자동 절번호(1./1.1). md에 번호 있으면 그대로 (hwpx 출력과 동일 규칙) */
     (function(){var ctr=[0,0,0,0,0];var HN=/^\s*(\d+([.\-]\d+)*\.?|[가나다라마바사아자차카타파하][.)]|[IVXⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+\.|[①-⑳])\s+/;
       src.querySelectorAll(".content h1,.content h2,.content h3,.content h4").forEach(function(h){
@@ -161,11 +172,14 @@
   /* ---------- 페이지네이션 (Paged.js) ---------- */
   function setHead(txt){var h=$('pvHead');if(h)h.textContent=txt;}
   function fallbackRender(src){var pages=$('pages');pages.innerHTML="";var d=document.createElement("div");d.className="fallback-doc";d.innerHTML=src.innerHTML;pages.appendChild(d);setHead("연속 보기 (페이지 분할 미리보기를 사용할 수 없습니다)");}
+  /* Paged.js가 한 표를 페이지 나눔 하면 이어지는 조각(data-split-from)엔 thead가 빠짐 → 원본 조각의 thead/colgroup을 복제해 반복.
+     반드시 '같은 표의 연속 조각'에만 적용(data-split-from 가드). 안 그러면 앞 표의 헤더가 뒤의 무관한 표에 붙는 버그 발생. */
   function repeatTableHeaders(container){
     var last=null;
     container.querySelectorAll(".pagedjs_page table").forEach(function(t){
       var thead=t.querySelector(":scope > thead");var colg=t.querySelector(":scope > colgroup");
-      if(thead){last={thead:thead,colg:colg};return;}
+      if(!t.hasAttribute("data-split-from")){last=thead?{thead:thead,colg:colg}:null;return;}
+      if(thead)return;
       if(last){if(last.colg&&!colg){t.insertBefore(last.colg.cloneNode(true),t.firstChild);}var tb=t.querySelector(":scope > tbody");var h=last.thead.cloneNode(true);if(tb){t.insertBefore(h,tb);}else{t.appendChild(h);}}
     });
   }
@@ -179,7 +193,7 @@
     var blobUrl=null;try{blobUrl=URL.createObjectURL(new Blob([PAGED_CSS],{type:"text/css"}));}catch(e){}
     try{
       var prev=new window.PagedModule.Previewer();
-      prev.preview("<style>"+PAGED_CSS+(pvFrame?PAGE_FRAME_CSS:"")+"</style>"+src.innerHTML, blobUrl?[blobUrl]:[], pages).then(function(flow){
+      prev.preview("<style>"+PAGED_CSS+"</style>"+src.innerHTML, blobUrl?[blobUrl]:[], pages).then(function(flow){
         if(blobUrl){try{URL.revokeObjectURL(blobUrl);}catch(e){}}
         repeatTableHeaders(pages);
         if(typeof window.applyFooter==="function")window.applyFooter();
@@ -285,7 +299,7 @@
         var base=s.split(/[\\/]/).pop(),norm=s.replace(/^\.\//,"").replace(/\\/g,"/");
         return origMap[norm]||origMap[base]||origMap[src]||dropResolver(src);   /* 원본 우선, 없으면 드롭(webp) */
       };
-      var blob=await window.MD2HWPX.convert(md,tpl,Object.assign({},window.__docSettings,{imageResolver:resolver}));
+      var blob=await window.MD2HWPX.convert(md,tpl,Object.assign({},window.__docSettings,{imageResolver:resolver,pageFrame:docOpts.frame}));
       var url=URL.createObjectURL(blob);
       var a=document.createElement('a');a.href=url;a.download=curName+'.hwpx';
       document.body.appendChild(a);a.click();a.remove();
@@ -319,6 +333,21 @@
     var blank=$('btnBlank');if(blank)blank.addEventListener('click',startBlank);
     $('btnSave').addEventListener('click',saveDocx);
     var sel=$('tplSelect');if(sel){curDoc=sel.value;sel.addEventListener('change',function(){curDoc=sel.value;});}   /* 문서 골격 선택(출력 템플릿은 clean 고정) */
+    /* 문서 설정 모달(앵커 팝오버): 템플릿·테두리·페이지번호. localStorage 영속. */
+    (function(){var dbtn=$('btnDocSet'),dmodal=$('docSetModal'),dclose=$('dsClose'),f=$('optFrame');
+      if(!dbtn||!dmodal)return;
+      try{var sv=JSON.parse(localStorage.getItem('mdocify_doc_opts')||'null');if(sv){docOpts.frame=!!sv.frame;}}catch(e){}
+      if(f)f.checked=docOpts.frame;
+      document.body.classList.toggle('mdocify-frame',docOpts.frame);
+      function persist(){try{localStorage.setItem('mdocify_doc_opts',JSON.stringify(docOpts));}catch(e){}}
+      function dopen(){dmodal.hidden=false;var r=dbtn.getBoundingClientRect(),w=dmodal.offsetWidth||300,left=Math.max(8,Math.min(r.left,window.innerWidth-w-8));dmodal.style.top=(r.bottom+6)+'px';dmodal.style.left=left+'px';}
+      function dclm(){dmodal.hidden=true;}
+      dbtn.addEventListener('click',function(e){e.stopPropagation();dmodal.hidden?dopen():dclm();});
+      if(dclose)dclose.addEventListener('click',dclm);
+      document.addEventListener('click',function(e){if(!dmodal.hidden&&!dmodal.contains(e.target)&&!dbtn.contains(e.target))dclm();});
+      document.addEventListener('keydown',function(e){if(e.key==='Escape')dclm();});
+      if(f)f.addEventListener('change',function(){docOpts.frame=f.checked;document.body.classList.toggle('mdocify-frame',docOpts.frame);persist();renderPreview($('editor').value,true);});
+    })();
     /* 라이트/다크 셸 테마: 선택 상태를 localStorage에 저장하고 시작 시 복원.
        다크는 '설정 기억' 체크와 무관하게 항상 독립 저장(MDeautify와 동일). 기본=라이트. */
     var dark=$('stDark');
@@ -674,12 +703,15 @@ window.__resolveLocalImages=async function(src){
 (function(){
   function remember(){try{var r=localStorage.getItem("mdocify_remember");return r===null?true:r==="1";}catch(e){return true;}}
   function save(k,v){if(!remember())return;try{localStorage.setItem(k,v);}catch(e){}}
-  var FOOT={on:true,text:"Page {pageNumber} / {totalPages}",align:"center",border:true};
+  var FOOT={on:true,text:"- {pageNumber} -",align:"center",border:false};   /* 정부양식 쪽번호 "- N -"(산출물 pageNum과 동일). 표지 포함 1부터 */
   function loadFooter(){try{var o=localStorage.getItem("mdocify_footer_on");if(o!==null)FOOT.on=(o==="1");var t=localStorage.getItem("mdocify_footer_text");if(t!==null)FOOT.text=t;var a=localStorage.getItem("mdocify_footer_align");if(a)FOOT.align=a;var b=localStorage.getItem("mdocify_footer_border");if(b!==null)FOOT.border=(b==="1");}catch(e){}}
   function saveFooter(){save("mdocify_footer_on",FOOT.on?"1":"0");save("mdocify_footer_text",FOOT.text);save("mdocify_footer_align",FOOT.align);save("mdocify_footer_border",FOOT.border?"1":"0");}
   function syncDocx(){window.__docSettings=window.__docSettings||{};window.__docSettings.footer={on:FOOT.on,text:FOOT.text,align:FOOT.align,border:FOOT.border};}
   window.applyFooter=function(){var pages=document.querySelectorAll("#pages .pagedjs_page");var content=[];pages.forEach(function(pg){var mc=pg.querySelector(".pagedjs_margin-bottom-center .pagedjs_margin-content");if(mc){mc.textContent="";mc.style.borderTop="";mc.style.paddingTop="";}if(!mc||pg.querySelector(".cover"))return;var body=pg.querySelector(".pagedjs_page_content");var has=body&&(body.textContent.trim().length>0||body.querySelector("img,svg,table,hr,figure"));if(!has)return;content.push(mc);});if(!FOOT.on)return;var total=content.length;content.forEach(function(mc,i){mc.textContent=String(FOOT.text).replace(/\{pageNumber\}/g,i+1).replace(/\{totalPages\}/g,total);mc.style.justifyContent=(FOOT.align==="left"?"flex-start":(FOOT.align==="right"?"flex-end":"center"));if(FOOT.border){mc.style.borderTop="1px solid #cbd5e1";mc.style.paddingTop="5px";}});};
-  loadFooter();syncDocx();
+  loadFooter();
+  /* 정부양식 쪽번호 마이그레이션(1회): 예전 기본값("Page …")·off 상태가 저장돼 있어도 gov "- N -"로 리셋 */
+  try{if(localStorage.getItem("mdocify_footer_ver")!=="gov1"){FOOT.on=true;FOOT.text="- {pageNumber} -";FOOT.align="center";FOOT.border=false;localStorage.setItem("mdocify_footer_ver","gov1");saveFooter();}}catch(e){}
+  syncDocx();
   var on=document.getElementById("tmFooter"),txt=document.getElementById("tmFooterText"),al=document.getElementById("tmFooterAlign"),bd=document.getElementById("tmFooterBorder"),body=document.getElementById("tmFooterBody");
   function sync(){if(on)on.checked=FOOT.on;if(txt)txt.value=FOOT.text;if(al)al.value=FOOT.align;if(bd)bd.checked=FOOT.border;if(body)body.classList.toggle("off",!FOOT.on);}
   function changed(){if(on)FOOT.on=on.checked;if(txt)FOOT.text=txt.value;if(al)FOOT.align=al.value;if(bd)FOOT.border=bd.checked;if(body)body.classList.toggle("off",!FOOT.on);saveFooter();syncDocx();window.applyFooter();}
