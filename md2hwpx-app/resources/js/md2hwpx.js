@@ -281,7 +281,7 @@
   function buildHtmlTable(html) {
     var t = parseHtmlTable(html);
     if (!t.colCount || !t.rowCount) return textPara('', TPL.STYLE.normal, 1000);
-    var rowH = 2400, GRID = TPL.TABLE.grid, HEAD = TPL.TABLE.headFill;
+    var rowH = 2100, GRID = TPL.TABLE.grid, HEAD = TPL.TABLE.headFill;   /* 셀 상하 높이 축소(2400→2100)로 표 컴팩트화(원본에 가깝게) */
     /* 열별 폭(HWPUNIT): colgroup 있으면 그 비율로(미리보기와 동일), 없으면 균등. 마지막 열이 잔여 흡수 */
     var colPx = [], useCg = t.colWidths && t.colWidths.length === t.colCount, acc = 0, eq = Math.floor(CONTENT_W / t.colCount);
     for (var ci = 0; ci < t.colCount; ci++) { var wv = (ci === t.colCount - 1) ? (CONTENT_W - acc) : (useCg ? Math.round(t.colWidths[ci] * CONTENT_W) : eq); colPx[ci] = wv; acc += wv; }
@@ -303,6 +303,25 @@
     return '<hp:p id="0" paraPrIDRef="' + TPL.STYLE.normal.para + '" styleIDRef="' + TPL.STYLE.normal.style + '" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="' + TPL.STYLE.normal.char + '">' + tbl + '<hp:t/></hp:run>' + lineseg(1000) + '</hp:p>';
   }
 
+  /* 목차(```toc): 각 줄 "들여쓰기(레벨=앞 공백수) + 항목  쪽번호(뒤 정수)" → 점선(leader=3) 우측정렬(type=2) 탭으로 정부양식 목차 재현.
+     원본과 동일 방식(paraPr tabPr 없이 탭 자체 속성). 탭 width는 근사치(한글이 열 때 재계산). */
+  function tocBlocks(text, out) {
+    String(text || '').replace(/\n+$/, '').split('\n').forEach(function (ln) {
+      if (!ln.trim()) return;
+      var level = Math.min(3, (ln.match(/^ */)[0] || '').length);   // 앞 공백 1칸 = 1레벨
+      var CH = level === 0 ? TPL.STYLE.h[4].char : TPL.STYLE.body[1].char;   // 대분류(1./2.)=12pt 굵게, 그 외=12pt 보통(원본과 동일)
+      var b = ln.replace(/^\s+/, '');
+      var m = /^(.*\S)\s+(\d+)$/.exec(b);
+      if (!m) { out.push(centerParaOf(b, TPL.STYLE.h[2].char, 1400)); return; }   // 쪽번호 없는 줄 = 가운데 큰 제목("목 차")
+      var entry = m[1], page = m[2];
+      var entryTxt = new Array(level + 1).join('　') + entry;   // 레벨당 전각공백 1
+      /* paraPrIDRef="23"(tabPrIDRef=3: 우측정렬 탭+leader) 사용 → 뷰어가 <hp:tab/>을 우측 끝으로 점선정렬(원본 목차와 동일 방식). 인라인 width는 뷰어가 무시함 */
+      var runs = '<hp:run charPrIDRef="' + CH + '"><hp:t>' + xmlEsc(cleanText(entryTxt)) + '</hp:t></hp:run>' +
+        '<hp:run charPrIDRef="' + CH + '"><hp:t><hp:tab leader="3" type="2"/>' + xmlEsc(page) + '</hp:t></hp:run>';
+      out.push('<hp:p id="0" paraPrIDRef="23" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">' + runs + lineseg(1200, CONTENT_W) + '</hp:p>');
+    });
+  }
+
   function blocks(tokens, out) {
     out = out || [];
     (tokens || []).forEach(function (t) {
@@ -311,7 +330,7 @@
         case 'paragraph': out.push(paraOf(inlineRuns(t.tokens, TPL.STYLE.normal.char), TPL.STYLE.normal, 1000)); break;
         case 'text': out.push(paraOf(t.tokens ? inlineRuns(t.tokens, TPL.STYLE.normal.char) : [{ c: TPL.STYLE.normal.char, t: decode(t.text) }], TPL.STYLE.normal, 1000)); break;
         case 'blockquote': blocks(t.tokens, out); break;
-        case 'code': String(t.text || '').replace(/\n$/, '').split('\n').forEach(function (ln) { out.push(paraOf([{ c: TPL.CUSTOM.code, t: ln || ' ' }], TPL.STYLE.normal, 1000)); }); break;
+        case 'code': if ((t.lang || '').toLowerCase() === 'toc') { tocBlocks(t.text, out); } else { String(t.text || '').replace(/\n$/, '').split('\n').forEach(function (ln) { out.push(paraOf([{ c: TPL.CUSTOM.code, t: ln || ' ' }], TPL.STYLE.normal, 1000)); }); } break;
         case 'list': listBlocks(t, 1, out); break;
         case 'table': out.push(buildTable(t)); break;
         case 'html': { var h = t.text || t.raw || ''; if (/<table[\s>]/i.test(h)) out.push(buildHtmlTable(h)); } break;
@@ -345,24 +364,44 @@
       '<hp:outMargin left="283" right="283" top="283" bottom="283"/><hp:inMargin left="510" right="510" top="141" bottom="141"/>' + trs + '</hp:tbl>';
     return '<hp:p id="0" paraPrIDRef="' + TPL.STYLE.normal.para + '" styleIDRef="' + TPL.STYLE.normal.style + '" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="' + TPL.STYLE.normal.char + '">' + tbl + '<hp:t/></hp:run>' + lineseg(1000) + '</hp:p>';
   }
+  /* 표지 회색 박스: 사업명(윗줄) + 제목(아랫줄, 큼) 를 가운데 정렬 1×1 회색 표(headFill)로. 페이지 가운데 배치. */
+  function coverBox(kicker, title) {
+    var W = BASE_CONTENT_W, HEAD = 14;   // 원본처럼 거의 페이지 폭 + 회색 박스(#DFDFDF, borderFill 14)
+    var st = { style: 0, para: TPL.CENTER, char: TPL.STYLE.body[1].char };
+    var lines = [];
+    if (kicker) lines.push([{ c: 38, t: kicker }]);   // 사업명 22pt
+    if (title) lines.push([{ c: 37, t: title }]);     // 제목 26pt 굵게(원본값)
+    var rowH = 7100;   // 박스 높이(원본 ≈25mm)
+    var tc = tblCell(lines, st, 0, 0, W, rowH, HEAD, false, 1, 1);
+    var tbl = '<hp:tbl id="' + (++tblSeq) + '" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="NONE" repeatHeader="0" rowCnt="1" colCnt="1" cellSpacing="0" borderFillIDRef="' + HEAD + '" noAdjust="0">' +
+      '<hp:sz width="' + W + '" widthRelTo="ABSOLUTE" height="' + rowH + '" heightRelTo="ABSOLUTE" protect="0"/>' +
+      '<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="CENTER" vertOffset="0" horzOffset="0"/>' +
+      '<hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:inMargin left="510" right="510" top="283" bottom="283"/>' +
+      '<hp:tr>' + tc + '</hp:tr></hp:tbl>';
+    return '<hp:p id="0" paraPrIDRef="' + TPL.CENTER + '" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="' + TPL.STYLE.normal.char + '">' + tbl + '<hp:t/></hp:run>' + lineseg(1000, CONTENT_W) + '</hp:p>';
+  }
   function coverParas(meta) {
-    var special = { title: 1, subtitle: 1, '제목': 1, '부제': 1, '서식': 1, form: 1, kicker: 1, '사업명': 1, '쪽테두리': 1, '테두리': 1, pageBorder: 1 };
+    var client = meta['고객사'] || meta['도입기업'] || '';
+    var kicker = meta['사업명'] || meta.kicker || '';
     var title = meta.title || meta['제목'] || '';
     var subtitle = meta.subtitle || meta['부제'] || '';
-    var form = meta['서식'] || meta.form || '';
-    var kicker = meta['사업명'] || meta.kicker || '';
+    var date = meta['작성일'] || meta.date || '';
+    var maker = meta['작성기관'] || meta.publisher || '';
+    var special = { title: 1, subtitle: 1, '제목': 1, '부제': 1, '서식': 1, form: 1, kicker: 1, '사업명': 1, '쪽테두리': 1, '테두리': 1, pageBorder: 1, '고객사': 1, '도입기업': 1, '작성일': 1, date: 1, '작성기관': 1, publisher: 1 };
     var pairs = Object.keys(meta).filter(function (k) { return !special[k]; }).map(function (k) { return [k, meta[k]]; });
-    if (!title && !subtitle && !kicker && !pairs.length) return null;
-    var out = [];
-    if (form) out.push(textPara(form, TPL.STYLE.normal, 1000));
-    out.push(emptyPara()); out.push(emptyPara()); out.push(emptyPara());
-    if (kicker) out.push(centerParaOf(kicker, TPL.CUSTOM.bold, 1300));
-    if (title) out.push(centerParaOf(title, TPL.STYLE.h[1].char, 2600));
-    if (subtitle) out.push(centerParaOf(subtitle, TPL.STYLE.h[2].char, 1600));
-    out.push(emptyPara()); out.push(emptyPara());
-    if (pairs.length) out.push(metaTable(pairs));
-    out.push(pageBreakPara());
-    return out;
+    if (!client && !kicker && !title && !subtitle && !date && !maker && !pairs.length) return null;
+    var out = [], i;
+    for (i = 0; i < 10; i++) out.push(emptyPara());   // 상단 여백(원본처럼 크게 → 고객사·박스가 ~25% 지점에서 시작)
+    if (client) out.push(centerParaOf(client, 39, 2400));   // 고객사 20pt 굵게(상단)
+    out.push(emptyPara());
+    if (kicker || title) out.push(coverBox(kicker, title));
+    if (subtitle) { out.push(emptyPara()); out.push(centerParaOf(subtitle, 38, 2600)); }
+    for (i = 0; i < 11; i++) out.push(emptyPara());   // 박스→작성일 간격
+    if (date) out.push(centerParaOf(date, 39, 2400));   // 작성일 20pt 굵게
+    for (i = 0; i < 10; i++) out.push(emptyPara());   // 작성일→작성기관 간격(작성기관 더 아래로)
+    if (maker) out.push(centerParaOf(maker, 38, 2600));   // 작성기관 22pt(하단)
+    if (pairs.length) { out.push(emptyPara()); out.push(metaTable(pairs)); }
+    return out;   /* 페이지 나눔은 다음 그룹(목차/본문) 첫 문단의 pageBreak로 처리 */
   }
 
   /* 정부 양식 쪽 테두리: 원본 한글처럼 본문 전체를 4변 실선(borderFill 2) 1×1 표로 감쌈.
@@ -382,17 +421,37 @@
       '<hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:inMargin left="0" right="0" top="0" bottom="0"/>' +
       '<hp:tr>' + tc + '</hp:tr></hp:tbl>';
   }
-  function buildSection0(bodyParas, pageFrame) {
+  /* 첫 문단 first run 앞에 secPr·컬럼·쪽번호 컨트롤 삽입($ 이스케이프 회피 위해 함수 치환) */
+  function injectHead(p, head) { return p.replace(/<hp:run[^>]*>/, function (m) { return m + head; }); }
+  /* 문단 자체를 새 페이지에서 시작(첫 <hp:p>의 pageBreak="0"→"1"). 빈 문단 없이 깔끔한 페이지 나눔 */
+  function breakBefore(p) { return p.replace('pageBreak="0"', 'pageBreak="1"'); }
+  /* preParas=프레임 밖(표지·목차, 테두리 없음·강제 페이지나눔 동작), framedParas=프레임 안(본문, 테두리 반복).
+     표 셀 안에선 pageBreak가 무시되므로 표지·목차는 프레임 밖에 둬야 페이지가 정상 나뉜다(원본과 동일). */
+  function buildSection0(preParas, framedParas, pageFrame) {
     var st = TPL.STYLE.normal;
-    if (!bodyParas.length) bodyParas = [textPara(' ', st, 1000)];
     /* 용지 여백(②상태): 머리말·꼬리말 예약 제거(0), 상/하 15mm·좌우 18mm. 본문 세로영역 267mm = 미리보기 일치. */
     var secpr = TPL.SECPR.replace(/<hp:margin [^>]*\/>/, '<hp:margin header="0" footer="0" gutter="0" left="5102" right="5102" top="4252" bottom="4252"/>');
-    /* 쪽번호: 원본과 동일하게 '쪽 번호 매기기'(pageNum) 컨트롤 사용 → 꼬리말 공간을 안 먹고 아래 여백에 "- N -" 표기(본문 축소 없음) */
-    var pageNumCtrl = '<hp:ctrl><hp:pageNum pos="BOTTOM_CENTER" formatType="DIGIT" sideChar="-"/></hp:ctrl><hp:ctrl><hp:newNum num="1" numType="PAGE"/></hp:ctrl>';
-    var firstInner = pageFrame ? (frameTbl(bodyParas) + '<hp:t/>') : '<hp:t/>';
-    var first = '<hp:p id="0" paraPrIDRef="' + st.para + '" styleIDRef="' + st.style + '" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="' + st.char + '">' + secpr + TPL.COLCTRL + pageNumCtrl + firstInner + '</hp:run>' + lineseg(1000) + '</hp:p>';
-    var rest = pageFrame ? '' : bodyParas.join('');
-    return '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><hs:sec ' + SEC_NS + '>' + first + rest + '</hs:sec>';
+    var secHead = secpr + TPL.COLCTRL;   /* 섹션 속성: 반드시 첫 문단 */
+    /* 쪽번호: '쪽 번호 매기기'(pageNum)를 본문 첫 문단에 둠 → 앞의 표지·목차엔 번호 안 붙고, newNum=1로 본문 첫 쪽이 "- 1 -"(원본과 동일) */
+    var PAGENUM = '<hp:ctrl><hp:pageNum pos="BOTTOM_CENTER" formatType="DIGIT" sideChar="-"/></hp:ctrl><hp:ctrl><hp:newNum num="1" numType="PAGE"/></hp:ctrl>';
+    var out = '';
+    if (pageFrame) {
+      var framed = framedParas.length ? framedParas : [textPara(' ', st, 1000)];
+      var brk = preParas.length ? '1' : '0';   /* 표지·목차 뒤면 본문(프레임)은 새 페이지부터 */
+      var frameRun = (preParas.length ? PAGENUM : secHead + PAGENUM) + frameTbl(framed);
+      var frameP = '<hp:p id="0" paraPrIDRef="' + st.para + '" styleIDRef="' + st.style + '" pageBreak="' + brk + '" columnBreak="0" merged="0"><hp:run charPrIDRef="' + st.char + '">' + frameRun + '<hp:t/></hp:run>' + lineseg(1000) + '</hp:p>';
+      if (preParas.length) out += injectHead(preParas[0], secHead) + preParas.slice(1).join('');
+      out += frameP;
+    } else {
+      var pre = preParas.slice(), fr = framedParas.slice();
+      if (pre.length && fr.length) fr[0] = breakBefore(fr[0]);   /* 표지·목차 뒤면 본문 새 페이지부터 */
+      var all = pre.concat(fr);
+      if (!all.length) all = [textPara(' ', st, 1000)];
+      if (pre.length && fr.length) { all[0] = injectHead(all[0], secHead); all[pre.length] = injectHead(all[pre.length], PAGENUM); }
+      else all[0] = injectHead(all[0], secHead + PAGENUM);
+      out += all.join('');
+    }
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><hs:sec ' + SEC_NS + '>' + out + '</hs:sec>';
   }
 
   /* ---------- 패키지 파일 (실제 한글 포맷) ---------- */
@@ -418,7 +477,7 @@
     var fm = parseFrontmatter(md || ''), meta = fm.meta, body = fm.body;
     var pageFrame = !!(settings && settings.pageFrame);   /* 테두리는 문서 설정(UI)으로 전달 */
     CONTENT_W = pageFrame ? (BASE_CONTENT_W - 2 * FRAME_PAD - 566) : BASE_CONTENT_W;   /* 프레임 안쪽 폭으로 본문·표 생성(내부표 바깥여백 283*2=566 버퍼로 셀 넘침 방지) */
-    CELLM = pageFrame ? 'left="360" right="360" top="360" bottom="360"' : 'left="510" right="510" top="141" bottom="141"';   /* 프레임(매뉴얼)=원본 360 사방, 그 외=기존 */
+    CELLM = pageFrame ? 'left="360" right="360" top="240" bottom="240"' : 'left="510" right="510" top="141" bottom="141"';   /* 프레임: 좌우 360 유지, 상하만 360→240 축소(표 컴팩트) */
     var title = meta.title || meta['제목'] || '';
     var subtitle = meta.subtitle || meta['부제'] || '';
     if (title) body = body.replace(/^\s*#\s+(.*)\r?\n/, function (m0, h) { return h.trim() === title.trim() ? '' : m0; });
@@ -428,15 +487,32 @@
     var tokens = window.marked.lexer(body);
     numCtr = [0, 0, 0, 0, 0]; imgList = []; picSeq = 0;
     imgResolver = (settings && settings.imageResolver) || null;
-    var cover = coverParas(meta);
-    var bodyParas = cover ? cover.slice() : [];
-    if (!cover) {
-      if (title) bodyParas.push(paraOf([{ c: TPL.STYLE.h[1].char, t: title }], TPL.STYLE.h[1], HH[1]));
-      if (subtitle) bodyParas.push(paraOf([{ c: TPL.STYLE.h[2].char, t: subtitle }], TPL.STYLE.h[2], HH[2]));
+    var coverP = coverParas(meta) || [];   /* 프레임 밖: 표지 */
+    if (!coverP.length) {
+      if (title) coverP.push(paraOf([{ c: TPL.STYLE.h[1].char, t: title }], TPL.STYLE.h[1], HH[1]));
+      if (subtitle) coverP.push(paraOf([{ c: TPL.STYLE.h[2].char, t: subtitle }], TPL.STYLE.h[2], HH[2]));
     }
-    blocks(tokens, bodyParas);
+    var tocP = [], framedParas = [], tocSeen = false;   /* tocP=프레임 밖 목차, framedParas=프레임 안 본문 */
+    (tokens || []).forEach(function (t) {
+      if (!tocSeen && t.type === 'code' && (t.lang || '').toLowerCase() === 'toc') { blocks([t], tocP); tocSeen = true; }
+      else blocks([t], framedParas);
+    });
+    if (coverP.length && tocP.length) tocP[0] = breakBefore(tocP[0]);   /* 표지 뒤 목차는 새 페이지부터 */
+    /* 표지·목차 페이지는 쪽번호 숨김(원본과 동일: 본문부터 번호). pageNum은 본문 첫 문단(buildSection0) */
+    var PAGEHIDE = '<hp:ctrl><hp:pageHiding hideHeader="0" hideFooter="0" hideMasterPage="0" hideBorder="0" hideFill="0" hidePageNum="1"/></hp:ctrl>';
+    if (coverP.length) coverP[0] = injectHead(coverP[0], PAGEHIDE);
+    if (tocP.length) tocP[0] = injectHead(tocP[0], PAGEHIDE);
+    var preParas = coverP.concat(tocP);
 
-    var section0 = buildSection0(bodyParas, pageFrame);
+    var section0 = buildSection0(preParas, framedParas, pageFrame);
+    /* 표지용 큰 글자 charPr 추가(37=24pt굵게 제목·38=20pt 작성기관·39=16pt 고객사/사업명·40=14pt 작성일) → 헤더에 주입 */
+    function mkCP(baseId, newId, h) { var b = new RegExp('<hh:charPr id="' + baseId + '"[\\s\\S]*?</hh:charPr>').exec(TPL.HEADER); return b ? b[0].replace('id="' + baseId + '"', 'id="' + newId + '"').replace(/height="\d+"/, 'height="' + h + '"').replace(/<hh:fontRef [^>]*\/>/, '<hh:fontRef hangul="3" latin="3" hanja="3" japanese="3" other="3" symbol="3" user="3"/>') : ''; }   /* 표지 글꼴 = 바탕체(id 3, 원본과 동일) */
+    var coverCP = mkCP(9, 37, 2600) + mkCP(1, 38, 2200) + mkCP(9, 39, 2000);   // 37=제목26pt굵게, 38=사업명·작성기관22pt, 39=고객사·작성일20pt굵게 (원본값)
+    var bf7 = /<hh:borderFill id="7"[\s\S]*?<\/hh:borderFill>/.exec(TPL.HEADER)[0];
+    var bf14 = bf7.replace('id="7"', 'id="14"').replace('faceColor="#F2F3F9"', 'faceColor="#DFDFDF"');   // 표지 박스 회색(#DFDFDF, 원본과 동일)
+    var headerXml = TPL.HEADER
+      .replace('</hh:charProperties>', coverCP + '</hh:charProperties>').replace(/<hh:charProperties itemCnt="\d+">/, '<hh:charProperties itemCnt="40">')
+      .replace('</hh:borderFills>', bf14 + '</hh:borderFills>').replace(/<hh:borderFills itemCnt="\d+">/, '<hh:borderFills itemCnt="14">');
     var prvText = (title ? title + '\n' : '') + tokens.map(function (t) { return (t.type === 'paragraph' || t.type === 'heading') ? inlineText(t.tokens) : ''; }).filter(Boolean).join('\n').slice(0, 2000);
 
     var z = new JSZip();
@@ -446,7 +522,7 @@
     z.file('META-INF/container.xml', CONTAINER_XML);
     z.file('META-INF/manifest.xml', MANIFEST_XML);
     z.file('Contents/content.hpf', buildContentHpf(title));
-    z.file('Contents/header.xml', TPL.HEADER);
+    z.file('Contents/header.xml', headerXml);
     z.file('Contents/section0.xml', section0);
     z.file('Preview/PrvText.txt', prvText || (title || 'MDhwpify'));
     imgList.forEach(function (im) { z.file('BinData/' + im.binId + '.' + im.ext, im.bytes); });

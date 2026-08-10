@@ -46,14 +46,27 @@
     return{meta:meta,body:t.slice(m[0].length)};
   }
   function buildCover(meta){
-    var title=meta.title||meta["제목"]||"",subtitle=meta.subtitle||meta["부제"]||"",kicker=meta["사업명"]||meta.kicker||"";
-    var special={"title":1,"subtitle":1,"제목":1,"부제":1,"사업명":1,"kicker":1,"쪽테두리":1,"테두리":1,"pageBorder":1};var rows="";
-    Object.keys(meta).forEach(function(k){if(special[k])return;rows+="<tr><td class='k'>"+esc(k)+"</td><td>"+esc(meta[k])+"</td></tr>";});
-    if(!title&&!subtitle&&!rows)return"";
-    return "<div class='cover'>"+(kicker?"<div class='kicker'>"+esc(kicker)+"</div>":"")+"<h1>"+esc(title)+"</h1><div class='st'>"+esc(subtitle)+"</div><div class='bar'></div>"+(rows?"<table>"+rows+"</table>":"")+"</div>";
+    var client=meta["고객사"]||meta["도입기업"]||"";
+    var kicker=meta["사업명"]||meta.kicker||"";
+    var title=meta.title||meta["제목"]||"";
+    var subtitle=meta.subtitle||meta["부제"]||"";
+    var date=meta["작성일"]||meta.date||"";
+    var maker=meta["작성기관"]||meta.publisher||"";
+    var special={"title":1,"subtitle":1,"제목":1,"부제":1,"사업명":1,"kicker":1,"쪽테두리":1,"테두리":1,"pageBorder":1,"고객사":1,"도입기업":1,"작성일":1,"date":1,"작성기관":1,"publisher":1,"서식":1,"form":1};
+    var rows="";Object.keys(meta).forEach(function(k){if(special[k])return;rows+="<tr><td class='k'>"+esc(k)+"</td><td>"+esc(meta[k])+"</td></tr>";});
+    if(!client&&!kicker&&!title&&!subtitle&&!date&&!maker&&!rows)return"";
+    return "<div class='cover gov-cover'>"+
+      (client?"<div class='gc-client'>"+esc(client)+"</div>":"")+
+      ((kicker||title)?"<div class='gc-box'>"+(kicker?"<div class='gc-kicker'>"+esc(kicker)+"</div>":"")+(title?"<div class='gc-title'>"+esc(title)+"</div>":"")+"</div>":"")+
+      (subtitle?"<div class='gc-sub'>"+esc(subtitle)+"</div>":"")+
+      "<div class='gc-spacer'></div>"+
+      (date?"<div class='gc-date'>"+esc(date)+"</div>":"")+
+      (maker?"<div class='gc-maker'>"+esc(maker)+"</div>":"")+
+      (rows?"<table class='gc-meta'>"+rows+"</table>":"")+
+    "</div>";
   }
 
-  var PAGED_CSS="@page{size:A4;margin:16mm 18mm;@top-center{content:' ';font-family:'Noto Sans KR','Malgun Gothic',sans-serif;font-size:9pt;color:#94a3b8;}@bottom-center{content:counter(page);font-family:'함초롬바탕','Malgun Gothic',sans-serif;font-size:10pt;color:#333;}}.content h1,.content h2,.content h3,.content h4{break-after:avoid-page;-webkit-column-break-after:avoid;}.content tr,.content img,.content svg,.content figure,.content pre,.content blockquote{break-inside:avoid;}.content ul,.content ol{break-inside:auto;}.content table{break-inside:avoid;}.content thead{break-after:avoid;}.pb-before{break-before:page;}.cover{break-after:page;}.content p,.content li{orphans:2;widows:2;}";
+  var PAGED_CSS="@page{size:A4;margin:16mm 18mm;@top-center{content:' ';font-family:'Noto Sans KR','Malgun Gothic',sans-serif;font-size:9pt;color:#94a3b8;}@bottom-center{content:counter(page);font-family:'함초롬바탕','Malgun Gothic',sans-serif;font-size:10pt;color:#333;}}.content h1,.content h2,.content h3,.content h4{break-after:avoid-page;-webkit-column-break-after:avoid;}.content tr,.content img,.content svg,.content figure,.content pre,.content blockquote{break-inside:avoid;}.content ul,.content ol{break-inside:auto;}.content table{break-inside:avoid;}.content thead{break-after:avoid;}.pb-before{break-before:page;}.cover{break-after:page;}.content .mdocify-toc{break-after:page;}.content p,.content li{orphans:2;widows:2;}";
   /* 정부 양식 쪽 테두리(미리보기): body.mdocify-frame 일 때 style.css 가 .pagedjs_* chrome 에 프레임+여백 적용 */
   var pvFrame=false;
 
@@ -149,6 +162,23 @@
         var parts=[];for(var j=1;j<=d;j++)parts.push(ctr[j]);
         h.innerHTML="<span class='secnum'>"+parts.join('.')+(d===1?'.':'')+"</span> "+h.innerHTML;
       });})();
+    /* 목차(```toc): "들여쓰기(레벨) 항목  쪽번호" → 점선 leader + 우측 쪽번호(정부양식). 코드 하이라이트보다 먼저 처리(pre 제거). */
+    src.querySelectorAll(".content pre code.language-toc").forEach(function(c){
+      var pre=c.closest("pre")||c, box=document.createElement("div");box.className="mdocify-toc";
+      String(c.textContent||"").replace(/\n+$/,"").split("\n").forEach(function(ln){
+        if(!ln.trim())return;
+        var level=Math.min(3,(ln.match(/^ */)[0]||"").length);
+        var b=ln.replace(/^\s+/,""),m=/^(.*\S)\s+(\d+)$/.exec(b);
+        if(!m){var t=document.createElement("div");t.className="toc-title";t.textContent=b;box.appendChild(t);return;}
+        var entry=m[1],page=m[2];
+        var row=document.createElement("div");row.className="toc-row toc-l"+level;
+        var e=document.createElement("span");e.className="toc-entry";e.textContent=entry;
+        var d=document.createElement("span");d.className="toc-dots";
+        var p=document.createElement("span");p.className="toc-page";p.textContent=page;
+        row.appendChild(e);row.appendChild(d);row.appendChild(p);box.appendChild(row);
+      });
+      pre.replaceWith(box);
+    });
     src.querySelectorAll("code.language-mermaid").forEach(function(c){var pre=c.closest("pre")||c;var kind=window.DIAG?window.DIAG.detectKind(c.textContent):null;var fig=document.createElement("figure");if(kind){fig.innerHTML=window.DIAG.render(kind,c.textContent);}else{var box=document.createElement("div");box.className="diag-unsupported";var ti=document.createElement("div");ti.className="du-title";ti.textContent="지원하지 않는 다이어그램 (지원: flowchart · sequence · erDiagram · pie · state · class · gantt · journey · mindmap · timeline)";box.appendChild(ti);fig.appendChild(box);}pre.replaceWith(fig);});
     src.querySelectorAll("pre code[class*='language-']").forEach(function(c){var mm=(c.className||"").match(/language-([\w#+.-]+)/);c.innerHTML=hlCode(c.textContent,mm?mm[1]:"");});
     /* 스크롤 sync(방식 B): 최상위 블록마다 원본 줄번호를 data-sl 로 태깅(marked 토큰 누적 줄수 → srcMap 로 원본 줄 역변환).
@@ -196,6 +226,8 @@
       prev.preview("<style>"+PAGED_CSS+"</style>"+src.innerHTML, blobUrl?[blobUrl]:[], pages).then(function(flow){
         if(blobUrl){try{URL.revokeObjectURL(blobUrl);}catch(e){}}
         repeatTableHeaders(pages);
+        /* 표지·목차 페이지는 테두리(프레임) 제외 — 원본과 동일(본문 페이지만 테두리) */
+        pages.querySelectorAll(".pagedjs_page").forEach(function(pg){ if(pg.querySelector(".cover,.mdocify-toc")) pg.classList.add("mdocify-noframe"); });
         if(typeof window.applyFooter==="function")window.applyFooter();
         if(typeof window.applyHeader==="function")window.applyHeader();
         var n=pages.querySelectorAll(".pagedjs_page").length||((flow&&flow.total)||0);
@@ -304,8 +336,26 @@
       var a=document.createElement('a');a.href=url;a.download=curName+'.hwpx';
       document.body.appendChild(a);a.click();a.remove();
       setTimeout(function(){URL.revokeObjectURL(url);},1000);
+      showSavedModal(curName);   /* 저장 완료 → 실제 한글에서 확인 안내 */
     }catch(err){console.error(err);alert('변환 실패: '+(err&&err.message?err.message:err));}
     finally{setBusy(false);}
+  }
+  /* .hwpx 저장 완료 안내 모달: 미리보기는 근사치 → 실제 한글에서 최종 확인 권고 */
+  function showSavedModal(fname){
+    var prev=document.querySelector('.saved-modal-ov');if(prev)prev.remove();
+    var ov=document.createElement('div');ov.className='saved-modal-ov';
+    ov.innerHTML="<div class='saved-modal' role='dialog' aria-modal='true'>"+
+      "<div class='sm-ic'>📄</div>"+
+      "<div class='sm-title'>hwpx 저장 완료</div>"+
+      "<div class='sm-msg'><b>"+esc(fname)+".hwpx</b> 저장됨.<br>미리보기는 근사치예요 — <b>실제 한글에서 열어 최종 레이아웃을 확인</b>해 주세요.</div>"+
+      "<button type='button' class='sm-ok'>확인</button></div>";
+    document.body.appendChild(ov);
+    function close(){ov.remove();document.removeEventListener('keydown',onKey);}
+    function onKey(e){if(e.key==='Escape'||e.key==='Enter')close();}
+    ov.querySelector('.sm-ok').addEventListener('click',close);
+    ov.addEventListener('click',function(e){if(e.target===ov)close();});
+    document.addEventListener('keydown',onKey);
+    try{ov.querySelector('.sm-ok').focus();}catch(e){}
   }
   function setBusy(b){var el=$('btnSave');if(el)el.disabled=b;document.body.classList.toggle('busy',b);}
 
@@ -707,7 +757,7 @@ window.__resolveLocalImages=async function(src){
   function loadFooter(){try{var o=localStorage.getItem("mdocify_footer_on");if(o!==null)FOOT.on=(o==="1");var t=localStorage.getItem("mdocify_footer_text");if(t!==null)FOOT.text=t;var a=localStorage.getItem("mdocify_footer_align");if(a)FOOT.align=a;var b=localStorage.getItem("mdocify_footer_border");if(b!==null)FOOT.border=(b==="1");}catch(e){}}
   function saveFooter(){save("mdocify_footer_on",FOOT.on?"1":"0");save("mdocify_footer_text",FOOT.text);save("mdocify_footer_align",FOOT.align);save("mdocify_footer_border",FOOT.border?"1":"0");}
   function syncDocx(){window.__docSettings=window.__docSettings||{};window.__docSettings.footer={on:FOOT.on,text:FOOT.text,align:FOOT.align,border:FOOT.border};}
-  window.applyFooter=function(){var pages=document.querySelectorAll("#pages .pagedjs_page");var content=[];pages.forEach(function(pg){var mc=pg.querySelector(".pagedjs_margin-bottom-center .pagedjs_margin-content");if(mc){mc.textContent="";mc.style.borderTop="";mc.style.paddingTop="";}if(!mc||pg.querySelector(".cover"))return;var body=pg.querySelector(".pagedjs_page_content");var has=body&&(body.textContent.trim().length>0||body.querySelector("img,svg,table,hr,figure"));if(!has)return;content.push(mc);});if(!FOOT.on)return;var total=content.length;content.forEach(function(mc,i){mc.textContent=String(FOOT.text).replace(/\{pageNumber\}/g,i+1).replace(/\{totalPages\}/g,total);mc.style.justifyContent=(FOOT.align==="left"?"flex-start":(FOOT.align==="right"?"flex-end":"center"));if(FOOT.border){mc.style.borderTop="1px solid #cbd5e1";mc.style.paddingTop="5px";}});};
+  window.applyFooter=function(){var pages=document.querySelectorAll("#pages .pagedjs_page");var content=[];pages.forEach(function(pg){var mc=pg.querySelector(".pagedjs_margin-bottom-center .pagedjs_margin-content");if(mc){mc.textContent="";mc.style.borderTop="";mc.style.paddingTop="";}if(!mc||pg.querySelector(".cover"))return;if(pg.querySelector(".mdocify-toc"))return;var body=pg.querySelector(".pagedjs_page_content");var has=body&&(body.textContent.trim().length>0||body.querySelector("img,svg,table,hr,figure"));if(!has)return;content.push(mc);});if(!FOOT.on)return;   /* 표지(.cover)·목차(.mdocify-toc) 페이지는 쪽번호 제외 → 본문부터 1 */var total=content.length;content.forEach(function(mc,i){mc.textContent=String(FOOT.text).replace(/\{pageNumber\}/g,i+1).replace(/\{totalPages\}/g,total);mc.style.justifyContent=(FOOT.align==="left"?"flex-start":(FOOT.align==="right"?"flex-end":"center"));if(FOOT.border){mc.style.borderTop="1px solid #cbd5e1";mc.style.paddingTop="5px";}});};
   loadFooter();
   /* 정부양식 쪽번호 마이그레이션(1회): 예전 기본값("Page …")·off 상태가 저장돼 있어도 gov "- N -"로 리셋 */
   try{if(localStorage.getItem("mdocify_footer_ver")!=="gov1"){FOOT.on=true;FOOT.text="- {pageNumber} -";FOOT.align="center";FOOT.border=false;localStorage.setItem("mdocify_footer_ver","gov1");saveFooter();}}catch(e){}
