@@ -66,7 +66,7 @@
     "</div>";
   }
 
-  var PAGED_CSS="@page{size:A4;margin:16mm 18mm;@top-center{content:' ';font-family:'Noto Sans KR','Malgun Gothic',sans-serif;font-size:9pt;color:#94a3b8;}@bottom-center{content:counter(page);font-family:'함초롬바탕','Malgun Gothic',sans-serif;font-size:10pt;color:#333;}}.content h1,.content h2,.content h3,.content h4{break-after:avoid-page;-webkit-column-break-after:avoid;}.content tr,.content img,.content svg,.content figure,.content pre,.content blockquote{break-inside:avoid;}.content ul,.content ol{break-inside:auto;}.content table{break-inside:avoid;}.content thead{break-after:avoid;}.pb-before{break-before:page;}.cover{break-after:page;}.content .mdocify-toc{break-after:page;}.content p,.content li{orphans:2;widows:2;}";
+  var PAGED_CSS="@page{size:A4;margin:16mm 18mm;@top-center{content:' ';font-family:'Noto Sans KR','Malgun Gothic',sans-serif;font-size:9pt;color:#94a3b8;}@bottom-center{content:counter(page);font-family:'함초롬바탕','Malgun Gothic',sans-serif;font-size:10pt;color:#333;}}.content h1,.content h2,.content h3,.content h4{break-after:avoid-page;-webkit-column-break-after:avoid;}.content tr,.content img,.content svg,.content figure,.content blockquote{break-inside:avoid;}.content ul,.content ol,.content pre{break-inside:auto;}.content table{break-inside:avoid;}.content thead{break-after:avoid;}.pb-before{break-before:page;}.cover{break-after:page;}.content .mdocify-toc{break-after:page;}.content p,.content li{orphans:2;widows:2;}";
   /* 정부 양식 쪽 테두리(미리보기): body.mdocify-frame 일 때 style.css 가 .pagedjs_* chrome 에 프레임+여백 적용 */
   var pvFrame=false;
 
@@ -181,6 +181,8 @@
     });
     src.querySelectorAll("code.language-mermaid").forEach(function(c){var pre=c.closest("pre")||c;var kind=window.DIAG?window.DIAG.detectKind(c.textContent):null;var fig=document.createElement("figure");if(kind){fig.innerHTML=window.DIAG.render(kind,c.textContent);}else{var box=document.createElement("div");box.className="diag-unsupported";var ti=document.createElement("div");ti.className="du-title";ti.textContent="지원하지 않는 다이어그램 (지원: flowchart · sequence · erDiagram · pie · state · class · gantt · journey · mindmap · timeline)";box.appendChild(ti);fig.appendChild(box);}pre.replaceWith(fig);});
     src.querySelectorAll("pre code[class*='language-']").forEach(function(c){var mm=(c.className||"").match(/language-([\w#+.-]+)/);c.innerHTML=hlCode(c.textContent,mm?mm[1]:"");});
+    /* A1: 긴 코드블록이 페이지 경계에서 잘리지 않게 — 각 줄을 블록 span(.cl)으로 감싸 Paged.js에 분할지점 제공(빈 줄=제로폭공백) */
+    src.querySelectorAll(".content pre > code").forEach(function(c){var h=c.innerHTML.replace(/\n$/,"");c.innerHTML=h.split("\n").map(function(ln){return "<span class='cl'>"+(ln===""?"​":ln)+"</span>";}).join("");});
     /* 스크롤 sync(방식 B): 최상위 블록마다 원본 줄번호를 data-sl 로 태깅(marked 토큰 누적 줄수 → srcMap 로 원본 줄 역변환).
        렌더 미출력 토큰(space/def)은 DOM 자식 1:1 대응에서 제외. 목록 항목·표 행은 세분 태깅(큰 블록 내부 드리프트 감소). */
     try{
@@ -213,7 +215,9 @@
       if(last){if(last.colg&&!colg){t.insertBefore(last.colg.cloneNode(true),t.firstChild);}var tb=t.querySelector(":scope > tbody");var h=last.thead.cloneNode(true);if(tb){t.insertBefore(h,tb);}else{t.appendChild(h);}}
     });
   }
-  function runPaged(src,keepScroll){
+  function runPaged(src,keepScroll,attempt){
+    attempt=attempt||0;
+    var myGen=(window.__pgGen=(window.__pgGen||0)+1);   /* A2 세대 가드: 더 새 조판이 시작되면 이 결과 폐기(조판 경쟁 방지) */
     var pages=$('pages'),viewer=pages;
     var vMax=viewer.scrollHeight-viewer.clientHeight;
     var ratio=(keepScroll&&vMax>0)?viewer.scrollTop/vMax:0;
@@ -225,6 +229,11 @@
       var prev=new window.PagedModule.Previewer();
       prev.preview("<style>"+PAGED_CSS+"</style>"+src.innerHTML, blobUrl?[blobUrl]:[], pages).then(function(flow){
         if(blobUrl){try{URL.revokeObjectURL(blobUrl);}catch(e){}}
+        if(myGen!==window.__pgGen)return;   /* 스테일 결과 폐기(더 새 조판이 진행 중) */
+        /* A2 오버플로 검출 → 자동 재조판: 조판 경쟁으로 내용이 단을 넘으면(scrollWidth>clientWidth) 최대 2회 재시도 */
+        var bad=false,pcs=pages.querySelectorAll(".pagedjs_page_content");
+        for(var bi=0;bi<pcs.length;bi++){if(pcs[bi].scrollWidth>pcs[bi].clientWidth+4){bad=true;break;}}
+        if(bad&&attempt<2){setTimeout(function(){if(myGen===window.__pgGen)runPaged(src,keepScroll,attempt+1);},50);return;}
         repeatTableHeaders(pages);
         /* 표지·목차 페이지는 테두리(프레임) 제외 — 원본과 동일(본문 페이지만 테두리) */
         pages.querySelectorAll(".pagedjs_page").forEach(function(pg){ if(pg.querySelector(".cover,.mdocify-toc")) pg.classList.add("mdocify-noframe"); });
@@ -233,7 +242,7 @@
         var n=pages.querySelectorAll(".pagedjs_page").length||((flow&&flow.total)||0);
         setHead("Total "+n+" page"+(n>1?"s":""));
         restore();hidePreviewLoading();
-      }).catch(function(err){console.error(err);if(blobUrl){try{URL.revokeObjectURL(blobUrl);}catch(e){}}fallbackRender(src);restore();hidePreviewLoading();});
+      }).catch(function(err){console.error(err);if(blobUrl){try{URL.revokeObjectURL(blobUrl);}catch(e){}}if(myGen!==window.__pgGen)return;fallbackRender(src);restore();hidePreviewLoading();});
     }catch(e){console.error(e);fallbackRender(src);restore();hidePreviewLoading();}
   }
 
@@ -255,24 +264,26 @@
   }
   /* 입력 시 색상 미러만 즉시 갱신, 무거운 미리보기 재생성은 입력을 멈춘 뒤 2초 후 1회(타이핑 중 재분할 깜빡임 방지) — MDeautify EDIT_DELAY=2000 과 동일 */
   var EDIT_DELAY=2000;
-  function onEdit(){syncMirror();clearTimeout(debounceTimer);debounceTimer=setTimeout(function(){renderPreview($('editor').value,true);},EDIT_DELAY);}
+  function onEdit(){syncMirror();if(window.__tabsOnEdit)window.__tabsOnEdit();clearTimeout(debounceTimer);debounceTimer=setTimeout(function(){renderPreview($('editor').value,true);if(window.__autoSave&&window.__autoSaveMd)window.__autoSaveMd();},EDIT_DELAY);}
 
   /* 이식된(별도 IIFE) 뱃지/드롭/ZIP 코드가 호출하는 브리지: 미리보기 재생성 + 편집기 텍스트 교체 */
   window.__render=function(text, keepScroll){ renderPreview(text, keepScroll); };
-  window.__setEditorText=function(text){ $('editor').value=text; if(window.__fname)curName=window.__fname; document.body.classList.add('loaded'); $('editor').scrollTop=0; syncMirror(); renderPreview(text,false); };
+  window.__setEditorText=function(text){ $('editor').value=text; if(window.__fname)curName=window.__fname; document.body.classList.add('loaded'); $('editor').scrollTop=0; syncMirror(); renderPreview(text,false); if(window.__markClean)window.__markClean(); };
 
   /* ---------- 파일 로드 / 빈 문서 ---------- */
   function loadFile(file){
     if(!file)return;
     var r=new FileReader();
     r.onload=function(e){
+      var nm=(file.name||'document'),fn=nm.replace(/\.(md|markdown|txt)$/i,'');
+      if(window.__openDoc){window.__openDoc({path:null,dir:null,name:nm,fname:fn,text:e.target.result,drop:{}});return;}
       $('editor').value=e.target.result;
-      curName=(file.name||'document').replace(/\.(md|markdown|txt)$/i,'');
-      window.__mdName=file.name;window.__fname=curName;
+      curName=fn;window.__mdName=nm;window.__fname=fn;
       document.body.classList.add('loaded');
       $('editor').scrollTop=0;
       syncMirror();
       renderPreview(e.target.result,false);
+      if(window.__markClean)window.__markClean();
     };
     r.readAsText(file,'utf-8');
   }
@@ -280,12 +291,14 @@
     /* 선택된 문서 골격(tplSelect)으로 시작 — 내용은 플레이스홀더(빈 양식). 없으면 빈 문서 폴백. */
     var fn=DOC_TEMPLATES[curDoc],seed=(fn&&typeof fn()==='string')?fn():'';
     var nm=DOC_NAMES[curDoc]||'document';
+    if(window.__openDoc){window.__openDoc({path:null,dir:null,name:nm,fname:nm,text:seed,drop:{}});$('editor').focus();return;}   /* 새 탭 */
     $('editor').value=seed;curName=nm;
     window.__mdName=null;window.__fname=nm;
     document.body.classList.add('loaded');
     $('editor').scrollTop=0;
     syncMirror();
     renderPreview(seed,false);
+    if(window.__markClean)window.__markClean();
     $('editor').focus();
   }
 
@@ -359,16 +372,30 @@
   }
   function setBusy(b){var el=$('btnSave');if(el)el.disabled=b;document.body.classList.toggle('busy',b);}
 
-  /* ---------- 리사이즈 + 접기 ---------- */
+  /* ---------- 리사이즈 + 접기 (A2: 사이드 패널 제외한 가용폭을 비율로 분할) ---------- */
   function initSplitter(){
-    var main=$('main'),pane=$('editorPane'),sp=$('splitter'),fb=$('foldBtn');
+    var main=$('main'),pane=$('editorPane'),viewer=$('previewWrap'),sp=$('splitter'),fb=$('foldBtn');
     if(!main||!pane||!sp||!fb)return;
-    var ico=fb.querySelector('.fold-ico'),lastBasis='46%',dragging=false;
+    var ico=fb.querySelector('.fold-ico'),lastBasis='50%',dragging=false,ratio=.5;
     function setIco(){ico.textContent=document.body.classList.contains('editor-collapsed')?'›':'‹';}
+    /* 가용폭 = main 내부폭 − (편집/미리보기가 아닌 모든 형제 폭) → AI 패널·리사이저·스플리터가 자동으로 빠진다.
+       ⚠️ 편집/미리보기의 현재 rect 로 계산하면 안 됨(이미 찌그러진 레이아웃 기준이 되어 값 어긋남). */
+    function avail(){var t=main.clientWidth,cs=main.children;for(var i=0;i<cs.length;i++){var c=cs[i];if(c===pane||c===viewer)continue;t-=c.getBoundingClientRect().width;}return t;}
+    function relayout(){
+      if(!viewer||dragging||document.body.classList.contains('editor-collapsed'))return;
+      if(!pane.offsetWidth&&!viewer.offsetWidth)return;           /* 아직 안 보이면 통과 */
+      var a=avail();if(!(a>0))return;
+      var maxW=a-260;if(maxW<180)maxW=180;                        /* 미리보기 최소 260 보장 */
+      var w=Math.max(180,Math.min(maxW,Math.round(a*ratio)));
+      if(Math.abs(pane.getBoundingClientRect().width-w)<.5)return;/* 변화 없으면 no-op */
+      pane.style.flex='0 0 '+w+'px';lastBasis=w+'px';
+    }
+    window.__relayoutPanes=relayout;
+    window.addEventListener('resize',relayout);
     fb.addEventListener('mousedown',function(e){e.stopPropagation();});
     fb.addEventListener('click',function(e){e.stopPropagation();var c=document.body.classList.toggle('editor-collapsed');if(!c)pane.style.flex='0 0 '+lastBasis;setIco();});
     sp.addEventListener('mousedown',function(e){if(e.target===fb||fb.contains(e.target))return;dragging=true;document.body.style.userSelect='none';document.body.style.cursor='col-resize';if(document.body.classList.contains('editor-collapsed')){document.body.classList.remove('editor-collapsed');setIco();}e.preventDefault();});
-    window.addEventListener('mousemove',function(e){if(!dragging)return;var r=main.getBoundingClientRect();var w=e.clientX-r.left;w=Math.max(220,Math.min(r.width-260,w));pane.style.flex='0 0 '+w+'px';lastBasis=w+'px';});
+    window.addEventListener('mousemove',function(e){if(!dragging)return;var er=pane.getBoundingClientRect();var a=avail();var maxW=(a>0)?Math.max(180,a-260):(main.clientWidth-260);var w=Math.max(180,Math.min(maxW,e.clientX-er.left));pane.style.flex='0 0 '+w+'px';lastBasis=w+'px';if(a>0)ratio=w/a;});   /* 편집 패널의 실제 왼쪽 기준 + 드래그 중 비율 갱신 */
     window.addEventListener('mouseup',function(){if(dragging){dragging=false;document.body.style.userSelect='';document.body.style.cursor='';}});
     setIco();
   }
@@ -377,7 +404,7 @@
   function init(){
     $('editor').addEventListener('input',onEdit);
     $('editor').addEventListener('scroll',function(){var r=$('raw');if(r){r.scrollTop=$('editor').scrollTop;r.scrollLeft=$('editor').scrollLeft;}});
-    $('fileInput').addEventListener('change',function(e){if(e.target.files[0])loadFile(e.target.files[0]);e.target.value='';});
+    $('fileInput').addEventListener('change',async function(e){var f=e.target.files[0];e.target.value='';if(f){if(window.__confirmReplaceDoc&&!(await window.__confirmReplaceDoc()))return;loadFile(f);}});
     var top=$('btnOpenTop');if(top)top.addEventListener('click',function(){if(window.__nativeOpen)window.__nativeOpen();else $('fileInput').click();});
     var open=$('btnOpen');if(open)open.addEventListener('click',function(){if(window.__nativeOpen)window.__nativeOpen();else $('fileInput').click();});
     var blank=$('btnBlank');if(blank)blank.addEventListener('click',startBlank);
@@ -503,13 +530,12 @@ window.__resolveLocalImages=async function(src){
     for(var j=0;j<files.length;j++){var f=files[j];if(!md&&isMdName(f.name))md=f;else if(isImgName(f.name))imgs.push(f);}
     if(md){
       if(window.__confirmReplaceDoc&&!(await window.__confirmReplaceDoc()))return;   /* 다른 MD 교체 전 확인 */
-      /* 함께 온 이미지는 기존 풀에 '병합'(문서 전환에도 이전 이미지 목록 유지) */
-      window.__drop=window.__drop||{};
-      for(var k=0;k<imgs.length;k++){var im=imgs[k];try{var du=await readDataUrl(im);window.__drop[im.name]=await window.__img.encode(du,im.type||mimeByName(im.name));}catch(e){}}
-      window.__mdDir=null;
+      var newDrop={};   /* 함께 온 이미지 = 이 문서의 이미지 풀 */
+      for(var k=0;k<imgs.length;k++){var im=imgs[k];try{var du=await readDataUrl(im);newDrop[im.name]=await window.__img.encode(du,im.type||mimeByName(im.name));}catch(e){}}
       var text=await readText(md);
-      window.__mdName=md.name;window.__fname=md.name.replace(/\.(md|markdown|txt)$/i,"");
-      window.__setEditorText(text);
+      var nm=md.name,fn=md.name.replace(/\.(md|markdown|txt)$/i,"");
+      if(window.__openDoc){window.__openDoc({path:null,dir:null,name:nm,fname:fn,text:text,drop:newDrop});}   /* 새 탭 */
+      else{window.__drop=Object.assign(window.__drop||{},newDrop);window.__mdDir=null;window.__mdName=nm;window.__fname=fn;window.__setEditorText(text);}
     }else if(imgs.length&&document.body.classList.contains("loaded")){
       /* 이미지만 드롭 → 파일 풀(window.__drop)에 추가.
          에디터(textarea) 위에 드롭했으면(insAt!=null) 그 위치에 ![](이름) 참조까지 삽입,
@@ -549,6 +575,63 @@ window.__resolveLocalImages=async function(src){
     var flat=[];if(dt.files){for(var k=0;k<dt.files.length;k++)flat.push(dt.files[k]);}
     handle(entries,flat,insAt);
   });
+})();
+
+/* ===== 변경감지(dirty) + md 원본 저장(Ctrl+S)/자동저장 + 문서 교체 가드 (MDeautify 편집경험 이식) ===== */
+(function(){
+  var ta=document.getElementById("editor");if(!ta)return;
+  var toastEl=null,toastT=null;
+  window.__toast=function(msg){try{if(!toastEl){toastEl=document.createElement("div");toastEl.id="appToast";document.body.appendChild(toastEl);}toastEl.textContent=msg;toastEl.classList.add("show");clearTimeout(toastT);toastT=setTimeout(function(){toastEl.classList.remove("show");},1600);}catch(e){}};
+  function toast(msg){if(window.__toast)window.__toast(msg);}
+  var savedText=null;   /* 마지막 저장/로드 내용 = 변경감지 기준선 */
+  window.__markClean=function(){savedText=ta.value;};
+  window.__isDirty=function(){return document.body.classList.contains("loaded")&&ta.value!==savedText;};
+  window.__getSaved=function(){return savedText;};                 /* 탭 스냅샷용 */
+  window.__setSaved=function(t){savedText=(t==null?null:t);};      /* 탭 복원용(dirty 보존) */
+  window.__saveMd=async function(){
+    if(!document.body.classList.contains("loaded"))return;
+    var text=ta.value;
+    var isExe=(typeof window.NL_PORT!=="undefined"&&typeof window.Neutralino!=="undefined");
+    var defName=window.__mdName||((window.__fname||"document")+".md");
+    if(isExe){
+      try{
+        var path=window.__mdPath;
+        if(!path){   /* 드롭 등 경로 미확보 → 저장 위치 1회 지정 */
+          path=await Neutralino.os.showSaveDialog("Markdown 저장",{defaultPath:defName,filters:[{name:"Markdown",extensions:["md","markdown","txt"]},{name:"모든 파일",extensions:["*"]}]});
+          if(!path)return;
+          if(!/\.(md|markdown|txt)$/i.test(path))path+=".md";
+          window.__mdPath=path;window.__mdDir=path.replace(/[\\\/][^\\\/]*$/,"");window.__mdName=path.replace(/^.*[\\\/]/,"");window.__fname=window.__mdName.replace(/\.(md|markdown|txt)$/i,"");
+          if(window.__renderFileBadge)window.__renderFileBadge();
+        }
+        await Neutralino.filesystem.writeFile(path,text);savedText=text;toast("저장됨");
+      }catch(e){try{Neutralino.debug.log("[save] "+e);}catch(_){}if(window.__appAlert)window.__appAlert("저장 중 문제가 발생했습니다.","오류");else alert("저장 중 문제가 발생했습니다.");}
+    }else{
+      try{var blob=new Blob([text],{type:"text/markdown;charset=utf-8"});var url=URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download=defName;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){URL.revokeObjectURL(url);},1000);toast("다운로드됨");}catch(e){}
+    }
+  };
+  window.__autoSaveMd=async function(){   /* 편집 멈춘 뒤 호출. EXE + 경로 있을 때만, 변경 있을 때만 조용히 저장(호출부에서 __autoSave 게이트) */
+    if(!document.body.classList.contains("loaded"))return;
+    var isExe=(typeof window.NL_PORT!=="undefined"&&typeof window.Neutralino!=="undefined");
+    if(!isExe||!window.__mdPath)return;
+    var text=ta.value; if(text===savedText)return;
+    try{await Neutralino.filesystem.writeFile(window.__mdPath,text);savedText=text;toast("자동 저장됨");}catch(e){try{Neutralino.debug.log("[autosave] "+e);}catch(_){}}
+  };
+  /* 다른 md로 교체 전 가드. true=진행 / false=취소. 저장 안 된 변경 있을 때만 개입 */
+  window.__confirmReplaceDoc=async function(){
+    if(!document.body.classList.contains("loaded"))return true;
+    if(!(window.__isDirty&&window.__isDirty()))return true;
+    if(window.__autoSave&&window.__mdPath){if(window.__saveMd)await window.__saveMd();return true;}
+    if(window.__confirmSave3){
+      var choice=await window.__confirmSave3({title:"저장하고 열기",message:"편집 중인 문서에 저장하지 않은 변경사항이 있어요.\n저장한 뒤 새 문서를 열까요?",saveText:"저장하고 열기",discardText:"저장 안 함",cancelText:"취소"});
+      if(choice==="cancel")return false;
+      if(choice==="save"){var hadPath=!!window.__mdPath;if(window.__saveMd)await window.__saveMd();if(!hadPath&&!window.__mdPath)return false;return true;}
+      return true;   /* discard */
+    }
+    return true;
+  };
+  document.addEventListener("keydown",function(e){
+    if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&(e.key==="s"||e.key==="S")){e.preventDefault();window.__saveMd();}
+  },true);
 })();
 
 /* ===== ZIP 저장: 현재 MD + 풀(window.__drop)의 이미지들을 무압축(store) zip으로 묶어 저장 ===== */
@@ -812,7 +895,7 @@ window.__resolveLocalImages=async function(src){
   };
   async function openMd(path){
     if(window.__confirmReplaceDoc&&!(await window.__confirmReplaceDoc()))return;
-    try{var text=await Neutralino.filesystem.readFile(path);window.__mdPath=path;window.__mdDir=dirOf(path);window.__mdName=baseOf(path);window.__fname=baseOf(path).replace(/\.(md|markdown|txt)$/i,"");window.__setEditorText(text);}catch(err){log("[md] open fail: "+path);}
+    try{var text=await Neutralino.filesystem.readFile(path);var nm=baseOf(path),fn=nm.replace(/\.(md|markdown|txt)$/i,"");if(window.__openDoc){window.__openDoc({path:path,dir:dirOf(path),name:nm,fname:fn,text:text,drop:{}});}else{window.__mdPath=path;window.__mdDir=dirOf(path);window.__mdName=nm;window.__fname=fn;window.__setEditorText(text);}}catch(err){log("[md] open fail: "+path);}
   }
   async function nativeOpen(){try{
     var ps=await Neutralino.os.showOpenDialog("파일 열기",{filters:[
@@ -837,6 +920,36 @@ window.__resolveLocalImages=async function(src){
     if(!window.__mdDir)return null;
     var abs=isAbs(src)?src.replace(/\//g,"\\"):joinP(window.__mdDir,src);
     try{var arr=await Neutralino.filesystem.readBinaryFile(abs);var ext=(baseOf(abs).split(".").pop()||"png").toLowerCase();if(ext==="jpeg")ext="jpg";return {bytes:new Uint8Array(arr),ext:ext};}catch(e){return null;}
+  };
+  /* ===== 폴더 탐색기(explorer.js) 연동 진입점 ===== */
+  /* .md 경로로 문서 열기 — 교체 가드 통과 시 true 반환(탐색기가 선택 표시), 취소·실패 시 false. */
+  window.__openMdPath=async function(path){
+    if(window.__confirmReplaceDoc&&!(await window.__confirmReplaceDoc()))return false;
+    try{
+      var text=await Neutralino.filesystem.readFile(path);var nm=baseOf(path),fn=nm.replace(/\.(md|markdown|txt)$/i,"");
+      if(window.__openDoc){window.__openDoc({path:path,dir:dirOf(path),name:nm,fname:fn,text:text,drop:{}});}
+      else{window.__mdPath=path;window.__mdDir=dirOf(path);window.__mdName=nm;window.__fname=fn;window.__setEditorText(text);}
+      return true;
+    }catch(err){log("[md] open fail: "+path);if(window.__toast)window.__toast("파일을 열 수 없어요");return false;}
+  };
+  /* 탐색기 이미지 미리보기용: 경로의 원본 바이트를 data URL 로(썸네일 표시, 인코딩 없이 원본). */
+  window.__imgDataUrl=async function(abs){try{return await readAsDataUrl(abs);}catch(e){log("[imgpreview] "+abs);return null;}};
+  /* 탐색기 이미지 클릭 = 현재 커서 위치에 ![](경로) 삽입. 문서 폴더(__mdDir) 기준 상대경로(없으면 절대),
+     __mdDir 미확보(창-안 드롭 문서 등) 시엔 렌더 위해 풀(__drop)에 바이트 적재 후 파일명 참조로 폴백. */
+  window.__insertImageFromPath=async function(abs){
+    if(!document.body.classList.contains("loaded"))return;
+    var base=baseOf(abs),ref=null;
+    if(window.__mdDir){
+      try{ref=await Neutralino.filesystem.getRelativePath(abs,window.__mdDir);}catch(e){ref=null;}
+      if(ref)ref=ref.replace(/\\/g,"/");
+      if(!ref)ref=abs.replace(/\\/g,"/");   /* 상대경로 산출 실패(다른 드라이브 등) → 절대경로 폴백 */
+    }else{
+      try{var du=await readAsDataUrl(abs);window.__drop=window.__drop||{};window.__drop[base]=(window.__img&&window.__img.encode)?await window.__img.encode(du,mimeOf(abs)):du;}catch(e){log("[ins img] "+abs);}
+      ref=base;
+    }
+    var alt=base.replace(/\.[a-z0-9]+$/i,"");
+    var dest=/\s/.test(ref)?"<"+ref+">":ref;
+    if(window.__img&&window.__img.insert)window.__img.insert("!["+alt+"]("+dest+")");   /* 커서 삽입 + onEdit → 미러·미리보기 갱신 */
   };
   /* 실행 인자로 넘어온 .md 자동 열기(더블클릭/연결앱/아이콘에 드롭) */
   try{var a=window.NL_ARGS||[];for(var i=1;i<a.length;i++){if(isMdPath(a[i])&&isAbs(a[i])){openMd(a[i]);break;}}}catch(e){}
