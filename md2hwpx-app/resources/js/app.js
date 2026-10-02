@@ -435,6 +435,14 @@
       document.addEventListener('mdocify:settings-hydrated',apply);
       if(dark)dark.addEventListener('change',function(){var mode=dark.checked?"dark":"light";document.body.classList.toggle('dark',dark.checked);try{localStorage.setItem(KEY,mode);}catch(e){}});
     })();
+    /* 자동 저장 토글(MDeautify settings/autosave.js 이식): 켜면 편집을 멈춘 뒤 미리보기가 갱신되는 시점(EDIT_DELAY)에
+       원본 .md 도 저장. 실제 저장은 window.__autoSaveMd()(EXE + 경로 있고 변경 있을 때만), 문서 전환 가드도 이 값을 본다. 기본=꺼짐. */
+    (function(){var KEY="mdocify_autosave",cb=$('stAutoSave');
+      function load(){var v=null;try{v=localStorage.getItem(KEY);}catch(e){}window.__autoSave=(v==="1");if(cb)cb.checked=window.__autoSave;}
+      load();
+      document.addEventListener('mdocify:settings-hydrated',load);
+      if(cb)cb.addEventListener('change',function(){window.__autoSave=cb.checked;try{localStorage.setItem(KEY,cb.checked?"1":"0");}catch(e){}});
+    })();
     /* 설정(⚙) 모달 열기/닫기 (버전·업데이트 UI 는 아래 자동 업데이트 IIFE 가 tmAbout 에 채움 — MDeautify 와 동일) */
     (function(){var btn=$('btnSettings'),modal=$('settingsModal'),close=$('stClose');
       if(!btn||!modal)return;
@@ -580,8 +588,32 @@ window.__resolveLocalImages=async function(src){
 /* ===== 변경감지(dirty) + md 원본 저장(Ctrl+S)/자동저장 + 문서 교체 가드 (MDeautify 편집경험 이식) ===== */
 (function(){
   var ta=document.getElementById("editor");if(!ta)return;
-  var toastEl=null,toastT=null;
-  window.__toast=function(msg){try{if(!toastEl){toastEl=document.createElement("div");toastEl.id="appToast";document.body.appendChild(toastEl);}toastEl.textContent=msg;toastEl.classList.add("show");clearTimeout(toastT);toastT=setTimeout(function(){toastEl.classList.remove("show");},1600);}catch(e){}};
+  /* 공용 토스트(MDeautify v1.6.0 이식): 저장·자동저장·이미지·탐색기·AI 안내가 같은 #fbToast 하나를 공유.
+     position:fixed(body) 라 부모 무관 → 에디터 우상단 📎 배지 자리를 기준으로 앵커(배지 보이면 그 왼쪽 8px, 숨으면 배지 자리=코너).
+     편집기가 안 보이면(접힘) 미리보기 우상단으로 폴백. (이전엔 창 맨 아래 가운데 #appToast 라 시선에서 멀어 안 보였음) */
+  window.__toast=function(msg,dur){
+    var t=document.getElementById("fbToast");
+    if(!t){t=document.createElement("div");t.id="fbToast";document.body.appendChild(t);}
+    else if(t.parentNode!==document.body){document.body.appendChild(t);}
+    t.textContent=msg;
+    var eb=document.getElementById("editorBody"),badge=document.getElementById("fileBadge");
+    var th=t.offsetHeight||26,anchored=false;
+    if(eb&&eb.getClientRects().length){
+      var er=eb.getBoundingClientRect();
+      t.style.left="auto";
+      t.style.top=Math.round(er.top+8+11-th/2)+"px";   /* 배지 세로 중앙(top:8 + 높이≈22의 절반)에 맞춤 */
+      if(badge&&badge.getClientRects().length){var br=badge.getBoundingClientRect();t.style.right=Math.round(window.innerWidth-br.left+8)+"px";}
+      else{t.style.right=Math.round(window.innerWidth-er.right+14)+"px";}
+      anchored=true;
+    }
+    if(!anchored){
+      var v=document.getElementById("previewWrap");
+      if(v){var r=v.getBoundingClientRect(),head=v.querySelector(".pv-head"),hh=head?head.offsetHeight:0;
+        t.style.top=Math.round(r.top+hh+12)+"px";t.style.right=Math.round(window.innerWidth-r.right+14)+"px";t.style.left="auto";}
+    }
+    t.classList.remove("show");void t.offsetWidth;t.classList.add("show");
+    clearTimeout(t.__tmr);t.__tmr=setTimeout(function(){t.classList.remove("show");},dur||1600);
+  };
   function toast(msg){if(window.__toast)window.__toast(msg);}
   var savedText=null;   /* 마지막 저장/로드 내용 = 변경감지 기준선 */
   window.__markClean=function(){savedText=ta.value;};
@@ -604,6 +636,7 @@ window.__resolveLocalImages=async function(src){
           if(window.__renderFileBadge)window.__renderFileBadge();
         }
         await Neutralino.filesystem.writeFile(path,text);savedText=text;toast("저장됨");
+        if(window.__tabsOnEdit)window.__tabsOnEdit();   /* 기준선이 바뀌었으니 탭의 미저장 점 재계산(안 하면 다음 입력·탭 전환 때까지 점이 남음) */
       }catch(e){try{Neutralino.debug.log("[save] "+e);}catch(_){}if(window.__appAlert)window.__appAlert("저장 중 문제가 발생했습니다.","오류");else alert("저장 중 문제가 발생했습니다.");}
     }else{
       try{var blob=new Blob([text],{type:"text/markdown;charset=utf-8"});var url=URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download=defName;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){URL.revokeObjectURL(url);},1000);toast("다운로드됨");}catch(e){}
@@ -614,7 +647,7 @@ window.__resolveLocalImages=async function(src){
     var isExe=(typeof window.NL_PORT!=="undefined"&&typeof window.Neutralino!=="undefined");
     if(!isExe||!window.__mdPath)return;
     var text=ta.value; if(text===savedText)return;
-    try{await Neutralino.filesystem.writeFile(window.__mdPath,text);savedText=text;toast("자동 저장됨");}catch(e){try{Neutralino.debug.log("[autosave] "+e);}catch(_){}}
+    try{await Neutralino.filesystem.writeFile(window.__mdPath,text);savedText=text;toast("자동 저장됨");if(window.__tabsOnEdit)window.__tabsOnEdit();}catch(e){try{Neutralino.debug.log("[autosave] "+e);}catch(_){}}   /* 저장 후 탭 점 재계산 — 자동 저장은 입력 후에 일어나 이게 없으면 점이 항상 떠 있음 */
   };
   /* 다른 md로 교체 전 가드. true=진행 / false=취소. 저장 안 된 변경 있을 때만 개입 */
   window.__confirmReplaceDoc=async function(){
@@ -730,12 +763,7 @@ window.__resolveLocalImages=async function(src){
     if(!badge)return;
     badge.classList.remove("flash-added");void badge.offsetWidth;badge.classList.add("flash-added");
     setTimeout(function(){badge.classList.remove("flash-added");},3600);
-    var editor=document.getElementById("editorPane");if(!editor)return;
-    var t=document.getElementById("fbToast");
-    if(!t){t=document.createElement("div");t.id="fbToast";editor.appendChild(t);}
-    t.textContent=(n>1?("이미지 "+n+"개가 추가되었습니다"):"이미지가 추가되었습니다");
-    t.classList.remove("show");void t.offsetWidth;t.classList.add("show");
-    clearTimeout(t.__tmr);t.__tmr=setTimeout(function(){t.classList.remove("show");},1900);
+    if(window.__toast)window.__toast(n>1?("이미지 "+n+"개가 추가되었습니다"):"이미지가 추가되었습니다",1900);   /* 공용 토스트(배지 옆)로 통일 */
   };
   /* 팝오버 클릭: X = 닫기 / '삽입' = 참조 삽입(닫지 않음 → 여러 번 연속 삽입 가능) */
   if(pop)pop.addEventListener("click",function(e){
@@ -1195,13 +1223,11 @@ window.__resolveLocalImages=async function(src){
   }
   function anchors(){var k=viewer.querySelectorAll("[data-sl]").length+"|"+rawInput.scrollHeight+"|"+viewer.scrollHeight+"|"+rawInput.clientWidth+"|"+viewer.clientHeight;if(k!==ckey){cache=build();ckey=k;}return cache;}
   function interp(A,fk,tk,v){for(var i=0;i<A.length-1;i++){var a=A[i],b=A[i+1];if(v>=a[fk]&&v<=b[fk]){var s=b[fk]-a[fk];return a[tk]+(s>0?(v-a[fk])/s:0)*(b[tk]-a[tk]);}}return v<=A[0][fk]?A[0][tk]:A[A.length-1][tk];}
-  var pvHead=document.querySelector(".pv-head");
-  function headH(){return pvHead?pvHead.offsetHeight:0;}   /* 뷰어 상단 스티키 헤더 높이 보정 */
+  /* 헤더(.pv-head)는 스크롤러(#pages) 밖 형제라 내용을 가리지 않음 → 헤더 높이 보정 없음.
+     (MDeautify 에서 sticky 헤더 시절 보정이 따라와 있었는데, 그대로 두면 동기화가 헤더 높이 ~33px 만큼 어긋남 — MDeautify v1.8.2 와 동일하게 제거) */
   function linkFn(from,to,fk,tk){from.addEventListener("scroll",function(){if(clock()<lockUntil)return;if(document.body.classList.contains("editor-collapsed"))return;var A=anchors();if(!A||A.length<2)return;
-    var h=headH();
-    var q=(from===viewer)?from.scrollTop+h:from.scrollTop;
+    var q=from.scrollTop;
     var y=interp(A,fk,tk,q);if(y==null)return;
-    if(to===viewer)y=y-h;
     lockUntil=clock()+80;to.scrollTop=Math.max(0,y);
     if(to===rawInput){mirror.scrollTop=rawInput.scrollTop;mirror.scrollLeft=rawInput.scrollLeft;}
   });}

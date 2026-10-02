@@ -50,10 +50,14 @@ if ($doExe) {
     # 갓 복사된 exe를 백신 실시간 검사가 잠그면 rcedit 이 exit 1 로 실패 → 최대 5회 재시도.
     $rcOk = $false
     for ($try = 1; $try -le 5; $try++) {
+      # CompanyName·LegalCopyright·OriginalFilename 이 비어 있으면 백신 평판 휴리스틱·오탐 심사에 불리 → 채워 둠(MDeautify v1.8.3 과 동일)
       & $rcedit $outExe `
         --set-icon $icon `
         --set-version-string "FileDescription" "MDhwpxify - Markdown to HWPX" `
         --set-version-string "ProductName" "MDhwpxify" `
+        --set-version-string "CompanyName" "felixleee" `
+        --set-version-string "LegalCopyright" "Copyright (c) 2026 felixleee" `
+        --set-version-string "OriginalFilename" "MDhwpxify.exe" `
         --set-file-version "$ver.0" `
         --set-product-version "$ver" 2>$null | Out-Null
       if ($LASTEXITCODE -eq 0) { $rcOk = $true; break }
