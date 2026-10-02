@@ -98,6 +98,12 @@ body.dark{
 #tabBar .tab.dirty .tab-x{display:none;}
 #tabBar .tab.dirty:hover .tab-dot{display:none;}
 #tabBar .tab.dirty:hover .tab-x{display:inline-flex;}
+/* AI 대화가 있는 문서 표시(별) — 점과 같은 방식으로 항상 DOM 에 두고 CSS 로만 노출(MDeautify v1.8.2) */
+#tabBar .tab-ai{display:none;align-items:center;flex:0 0 auto;color:var(--accent);opacity:.9;}
+#tabBar .tab.has-ai .tab-ai{display:inline-flex;}
+/* 별이 붙는 탭은 좌우를 좁힌다 — 왼쪽 여백 12→8px, 별↔이름 간격 6→4px(gap 을 margin 으로 상쇄) */
+#tabBar .tab.has-ai{padding-left:8px;}
+#tabBar .tab.has-ai .tab-ai{margin-right:-2px;}
 #previewWrap{flex:1 1 auto;background:var(--pv-bg);}
 /* 편집 오버레이: #raw(색칠 미러, 뒤) + #editor(투명 textarea, 앞). 두 요소의 박스/폰트/줄바꿈/스크롤바 거터가 동일해야 글자 위치가 정확히 겹침. */
 #findHl,#raw,#editor{position:absolute;inset:0;box-sizing:border-box;margin:0;padding:18px 20px;font-family:"Cascadia Code","Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word;scrollbar-gutter:stable;scrollbar-width:thin;tab-size:2;}
