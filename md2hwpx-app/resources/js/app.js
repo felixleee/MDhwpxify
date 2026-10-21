@@ -15,7 +15,7 @@
   var $ = function (id) { return document.getElementById(id); };
 
   /* ---------- 공통 유틸 ---------- */
-  function esc(s){return String(s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+  function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}   /* 따옴표까지 — 속성값(title='…') 안에서 끊고 나오지 못하게 */
 
   /* ---------- 편집기 구문 강조 미러(MDeautify 이식) ---------- */
   function hlMd(t){var e=esc(t);
@@ -96,7 +96,8 @@
     var srcmd=prep.md,srcMap=prep.map;
     window.MDPREP.setupMarked();
     var src=$('src');
-    src.innerHTML=buildCover(meta)+"<div class='content'>"+window.marked.parse(srcmd)+"</div>";
+    /* 마크다운 안 HTML 은 정화한 뒤 넣는다(sanitize.js) — 숨은 #src 에 넣는 순간에도 <img onerror> 같은 코드는 실행되므로 넣기 전에 */
+    src.innerHTML=buildCover(meta)+"<div class='content'>"+window.__sanitize(window.marked.parse(srcmd))+"</div>";
     src.querySelectorAll(".content a[href]").forEach(function(a){a.setAttribute("target","_blank");a.setAttribute("rel","noopener noreferrer");});
     /* 표 헤더(첫 행이 전부 th·rowspan 없음)를 <thead>로 감싸 Paged.js가 페이지마다 헤더 반복(산출물 repeatHeader와 동일) → 헤더 고아·표 중복 방지 */
     src.querySelectorAll(".content table").forEach(function(t){
@@ -114,7 +115,7 @@
         if(HN.test(h.textContent))return;
         ctr[d]++; for(var i=d+1;i<ctr.length;i++)ctr[i]=0;
         var parts=[];for(var j=1;j<=d;j++)parts.push(ctr[j]);
-        h.innerHTML="<span class='secnum'>"+parts.join('.')+(d===1?'.':'')+"</span> "+h.innerHTML;
+        var sn=document.createElement('span');sn.className='secnum';sn.textContent=parts.join('.')+(d===1?'.':'');h.insertBefore(document.createTextNode(' '),h.firstChild);h.insertBefore(sn,h.firstChild);   /* innerHTML 로 다시 읽고 쓰지 않음 */
       });})();
     /* 목차(```toc): "들여쓰기(레벨) 항목  쪽번호" → 점선 leader + 우측 쪽번호(정부양식). 코드 하이라이트보다 먼저 처리(pre 제거). */
     src.querySelectorAll(".content pre code.language-toc").forEach(function(c){
@@ -133,7 +134,7 @@
       });
       pre.replaceWith(box);
     });
-    src.querySelectorAll("code.language-mermaid").forEach(function(c){var pre=c.closest("pre")||c;var kind=window.DIAG?window.DIAG.detectKind(c.textContent):null;var fig=document.createElement("figure");if(kind){fig.innerHTML=window.DIAG.render(kind,c.textContent);}else{var box=document.createElement("div");box.className="diag-unsupported";var ti=document.createElement("div");ti.className="du-title";ti.textContent="지원하지 않는 다이어그램 (지원: flowchart · sequence · erDiagram · pie · state · class · gantt · journey · mindmap · timeline)";box.appendChild(ti);fig.appendChild(box);}pre.replaceWith(fig);});
+    src.querySelectorAll("code.language-mermaid").forEach(function(c){var pre=c.closest("pre")||c;var kind=window.DIAG?window.DIAG.detectKind(c.textContent):null;var fig=document.createElement("figure");if(kind){fig.innerHTML=window.__sanitize(window.DIAG.render(kind,c.textContent));}else{var box=document.createElement("div");box.className="diag-unsupported";var ti=document.createElement("div");ti.className="du-title";ti.textContent="지원하지 않는 다이어그램 (지원: flowchart · sequence · erDiagram · pie · state · class · gantt · journey · mindmap · timeline)";box.appendChild(ti);fig.appendChild(box);}pre.replaceWith(fig);});
     src.querySelectorAll("pre code[class*='language-']").forEach(function(c){var mm=(c.className||"").match(/language-([\w#+.-]+)/);c.innerHTML=hlCode(c.textContent,mm?mm[1]:"");});
     /* A1: 긴 코드블록이 페이지 경계에서 잘리지 않게 — 각 줄을 블록 span(.cl)으로 감싸 Paged.js에 분할지점 제공(빈 줄=제로폭공백) */
     src.querySelectorAll(".content pre > code").forEach(function(c){var h=c.innerHTML.replace(/\n$/,"");c.innerHTML=h.split("\n").map(function(ln){return "<span class='cl'>"+(ln===""?"​":ln)+"</span>";}).join("");});
@@ -157,7 +158,7 @@
 
   /* ---------- 페이지네이션 (Paged.js) ---------- */
   function setHead(txt){var h=$('pvHead');if(h)h.textContent=txt;}
-  function fallbackRender(src){var pages=$('pages');pages.innerHTML="";var d=document.createElement("div");d.className="fallback-doc";d.innerHTML=src.innerHTML;pages.appendChild(d);setHead("연속 보기 (페이지 분할 미리보기를 사용할 수 없습니다)");}
+  function fallbackRender(src){var pages=$('pages');pages.innerHTML="";var d=document.createElement("div");d.className="fallback-doc";[].forEach.call(src.childNodes,function(n){d.appendChild(n.cloneNode(true));});pages.appendChild(d);setHead("연속 보기 (페이지 분할 미리보기를 사용할 수 없습니다)");}
   /* Paged.js가 한 표를 페이지 나눔 하면 이어지는 조각(data-split-from)엔 thead가 빠짐 → 원본 조각의 thead/colgroup을 복제해 반복.
      반드시 '같은 표의 연속 조각'에만 적용(data-split-from 가드). 안 그러면 앞 표의 헤더가 뒤의 무관한 표에 붙는 버그 발생. */
   function repeatTableHeaders(container){
@@ -730,7 +731,7 @@ window.__resolveLocalImages=async function(src){
 
 /* ===== 불러온 파일 뱃지 + 팝오버 (문서 + 참조 이미지 상태 + 미참조 드롭 이미지) ===== */
 (function(){
-  function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+  function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}   /* 홑따옴표까지 — 이미지 이름은 문서 글에서 오고 속성은 홑따옴표로 감싼다(예전엔 x' onmouseover='… 로 코드가 끼어들 수 있었다) */
   /* '식별안됨' 이미지 = MD에 ![](이름) 참조가 있으나 못 찾음 → 그 참조를 본문에서 삭제(파일명/경로 basename 일치). */
   function removeRefFromMd(name){
     var ta=document.getElementById("editor");if(!ta)return;
@@ -1028,7 +1029,7 @@ window.__resolveLocalImages=async function(src){
 (function(){
   var modal=document.getElementById("notesModal"),titleEl=document.getElementById("nmTitle"),bodyEl=document.getElementById("nmBody"),closeBtn=document.getElementById("nmClose");
   if(!modal)return;
-  function esc(s){return String(s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+  function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}   /* 따옴표까지 — 속성값(title='…') 안에서 끊고 나오지 못하게 */
   function close(){modal.hidden=true;}
   if(closeBtn)closeBtn.addEventListener("click",close);
   modal.addEventListener("click",function(e){if(e.target===modal)close();});
@@ -1042,7 +1043,7 @@ window.__resolveLocalImages=async function(src){
         var tag=String(j.tag_name||j.name||"").replace(/^v/i,"");
         return {ver:tag?("v"+tag):(j.name||"릴리스"),
                 date:String(j.published_at||j.created_at||"").slice(0,10),
-                html:(j.body&&window.marked)?window.marked.parse(stripHead(j.body)):esc(j.body||"")};
+                html:(j.body&&window.marked)?window.__sanitize(window.marked.parse(stripHead(j.body))):esc(j.body||"")};   /* GitHub 에서 받은 글도 정화 */
       });});
   }
   function renderList(items){
@@ -1083,6 +1084,7 @@ window.__resolveLocalImages=async function(src){
   about.hidden=false;if(verEl)verEl.textContent=CUR||"—";
 
   function verGt(a,b){a=String(a).replace(/^v/i,"").split(".");b=String(b).replace(/^v/i,"").split(".");for(var i=0;i<3;i++){var x=parseInt(a[i]||0,10),y=parseInt(b[i]||0,10);if(x>y)return true;if(x<y)return false;}return false;}
+  function escH(s){return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}   /* GitHub 태그·오류 글자를 HTML 로 넣지 않게 */
   function setMsg(cls,html){if(!box||!msg)return;box.hidden=false;msg.className="tm-upd-msg"+(cls?" "+cls:"");msg.innerHTML=html;}
   function showAct(){if(act)act.hidden=false;}   /* '릴리스 노트'는 새 창 대신 인-앱 모달로(아래 링크 클릭) */
   function hideAct(){if(act)act.hidden=true;}
@@ -1104,14 +1106,14 @@ window.__resolveLocalImages=async function(src){
       if(!info.tag){if(!auto)setMsg("bad","릴리스 정보를 읽지 못했어요.");return false;}
       if(verGt(info.tag,CUR)){
         if(settingsBtn)settingsBtn.classList.add("has-update");
-        if(!info.exeUrl){setMsg("warn","새 버전 <b>v"+info.tag+"</b> 이 있지만 자동 설치용 exe가 없어요. 릴리스에서 직접 받아 주세요.");showAct();if(go)go.style.display="none";return true;}
-        setMsg("warn","새 버전 <b>v"+info.tag+"</b> 이 있습니다. (현재 v"+CUR+")");showAct();if(go){go.style.display="";go.disabled=false;}return true;   /* 새 버전 → 설치 버튼 활성 */
+        if(!info.exeUrl){setMsg("warn","새 버전 <b>v"+escH(info.tag)+"</b> 이 있지만 자동 설치용 exe가 없어요. 릴리스에서 직접 받아 주세요.");showAct();if(go)go.style.display="none";return true;}
+        setMsg("warn","새 버전 <b>v"+escH(info.tag)+"</b> 이 있습니다. (현재 v"+CUR+")");showAct();if(go){go.style.display="";go.disabled=false;}return true;   /* 새 버전 → 설치 버튼 활성 */
       }
       if(settingsBtn)settingsBtn.classList.remove("has-update");
       if(!auto){setMsg("ok","최신 버전입니다. (v"+CUR+")");showAct();if(go){go.style.display="";go.disabled=true;}}  /* 같은 버전 → 버튼은 두되 비활성화 */
       else hideAct();
       return false;
-    }).catch(function(e){if(btn)btn.disabled=false;if(!auto)setMsg("bad","업데이트 확인 실패: "+((e&&e.message)||e));return false;});
+    }).catch(function(e){if(btn)btn.disabled=false;if(!auto)setMsg("bad","업데이트 확인 실패: "+escH((e&&e.message)||e));return false;});
   }
 
   function psQ(s){return "'"+String(s).replace(/'/g,"''")+"'";}   /* PowerShell single-quote escape */
