@@ -5,7 +5,9 @@
  *   - 목록 depth 1~4 → 본문 1~4단계 + 정부 불릿(□ ○ ▪ -) 리터럴
  *   - 표         → 표제목(머리, 회색 채움)/표내용(셀) + 그리드 borderFill
  *   - 인라인      → 굵게/기울임/코드/취소선/링크 (gov header에 추가한 커스텀 charPr)
- * 무접두사 OWPML 직접 방출. 제어문자(탭 등)는 cleanText로 제거(한글 크래시 방지).
+ *   - ```mermaid  → 미리보기와 같은 DIAG SVG 를 PNG(2배 해상도)로 그려 가운데 그림 문단으로(미지원 종류는 코드 그대로)
+ *   - 이미지      → png/jpg/gif/bmp 는 원본 그대로, 그 밖(붙여넣기 WebP·SVG 등)은 PNG 로 바꿔 실제 크기로
+ * 무접두사 OWPML 직접 방출. 제어문자(탭 등)는 cleanText로 제거(한글 크래시 방지), XML 에 못 쓰는 글자는 xmlEsc 에서 버림.
  * 노출: window.MD2HWPX.convert(md, tpl, settings) -> Promise<Blob>
  */
 (function () {
@@ -17,17 +19,22 @@
   var CELLM = 'left="510" right="510" top="141" bottom="141"';   // 표 셀 안쪽 여백(프레임 문서는 원본 맞춰 360 사방)
   var TPL = null;
 
-  function xmlEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  /* XML 1.0 에 쓸 수 없는 글자(제어 문자 U+0000–0008·000B·000C·000E–001F, U+FFFE/FFFF, 짝 없는 서로게이트)는 버린다.
+     PDF·Word 에서 복사한 글에 섞여 들어오며, 남으면 한글이 문서를 손상된 파일로 본다. */
+  var XML_BAD = /[\x00-\x08\x0B\x0C\x0E-\x1F￾￿]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+  function xmlEsc(s) { return String(s == null ? '' : s).replace(XML_BAD, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   function cleanText(s) { return String(s == null ? '' : s).replace(/[\t\r\n\v\f]+/g, ' '); }
 
   /* ---------- 이미지 (hp:pic + BinData 임베드). href=data URI 만 처리 ---------- */
   var imgList = [];   // {binId, ext, mime, bytes}
   var picSeq = 0;
   var imgResolver = null;   // (src)->{bytes,ext}|Uint8Array|null : data URI 아닌 상대경로 이미지 공급(앱: md 옆 파일 읽기)
+  var imgMap = {};   // href → 미리 정리한 이미지 {bytes,ext,mime,w?,h?} (변환마다 resolveImages 결과로 교체)
   function dataUriBytes(uri) {
-    var m = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/.exec(uri || '');
+    var m = /^data:([^,]*),([\s\S]*)$/.exec(uri || '');   /* ;charset=… 같은 매개변수가 끼어도 받음 */
     if (!m) return null;
-    var mime = m[1] || 'image/png', isB64 = !!m[2], data = m[3], bin;
+    var head = m[1].split(';'), mime = (head[0] || '').trim().toLowerCase() || 'image/png', data = m[2], bin;
+    var isB64 = head.slice(1).some(function (p) { return p.trim().toLowerCase() === 'base64'; });
     try { bin = isB64 ? ((typeof atob !== 'undefined') ? atob(data) : Buffer.from(data, 'base64').toString('binary')) : decodeURIComponent(data); }
     catch (e) { return null; }
     var bytes = new Uint8Array(bin.length);
@@ -82,21 +89,156 @@
     else if (m = /^(\d+)$/.exec(spec)) { w = +m[1]; h = Math.round(natH * w / natW); }
     return { w: Math.max(1, w), h: Math.max(1, h) };
   }
-  function addImage(tok, maxW, maxH) {
-    var ps = parseImgSpec(typeof tok === 'string' ? { href: tok } : tok);
-    var href = ps.href;
+  /* 실제 바이트로 형식 판별 — 한글이 확실히 읽는 png/jpg/gif/bmp 만, 그 밖(WebP·SVG 등)은 null */
+  function sniffImg(b) {
+    if (!b || b.length < 4) return null;
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return 'png';
+    if (b[0] === 0xFF && b[1] === 0xD8) return 'jpg';
+    if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return 'gif';
+    if (b[0] === 0x42 && b[1] === 0x4D) return 'bmp';
+    return null;
+  }
+  /* src → {bytes, ext, mime, hint}. ext·mime 은 바이트로 정한다(이름과 내용이 달라도 맞게, content.hpf 속성엔 안전한 글자만).
+     hint = 원래 알려진 mime(PNG 변환 때 SVG 판별용) */
+  function srcInfo(href, resolver) {
     var info = null;
     if (/^data:/.test(href || '')) info = dataUriBytes(href);
-    else if (imgResolver) {
-      var r = imgResolver(href);
+    else if (resolver) {
+      var r = resolver(href);
       if (r) { var bytes = r.bytes || r; var ext = (r.ext || (href.split('?')[0].split('.').pop() || 'png')).toLowerCase(); if (ext === 'jpeg') ext = 'jpg'; if (bytes && bytes.length) info = { bytes: bytes, ext: ext, mime: 'image/' + ext }; }
     }
     if (!info) return null;
+    info.hint = info.mime;
+    var k = sniffImg(info.bytes);
+    if (k) { info.ext = k; info.mime = 'image/' + k; }
+    else { info.ext = String(info.ext || '').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'bin'; info.mime = 'image/' + info.ext; }
+    return info;
+  }
+  function addImage(tok, maxW, maxH) {
+    var ps = parseImgSpec(typeof tok === 'string' ? { href: tok } : tok);
+    var info = imgMap[ps.href] || srcInfo(ps.href, imgResolver);   /* 보통은 resolveImages 가 미리 정리해 둔 것 */
+    if (!info) return null;
     var binId = 'image' + (imgList.length + 1);
     imgList.push({ binId: binId, ext: info.ext, mime: info.mime, bytes: info.bytes });
-    var nat = imageSize(info.bytes);
+    var nat = info.w ? { w: info.w, h: info.h } : imageSize(info.bytes);
+    if (!nat.w || !nat.h) nat = { w: 400, h: 300 };   /* 헤더가 깨져 크기 0 → 0 나눗셈(NaN) 방지 */
     var disp = applyImgSpec(ps.spec, nat.w, nat.h, Math.round((maxW || CONTENT_W) / PX));
     return buildPic(binId, disp.w, disp.h, maxW, maxH);
+  }
+  /* 다이어그램 PNG → hp:pic. png={data,w,h}: 2배 해상도로 그린 비트맵을 논리 크기(w×h px)로 배치 → 인쇄·확대해도 선명 */
+  function addPng(png, maxW, maxH) {
+    if (!png || !png.data || !png.data.length) return null;
+    var binId = 'image' + (imgList.length + 1);
+    imgList.push({ binId: binId, ext: 'png', mime: 'image/png', bytes: png.data });
+    return buildPic(binId, png.w, png.h, maxW, maxH);
+  }
+
+  /* ---------- 다이어그램(mermaid) → PNG 사전 렌더 (async; MDocify md2docx 와 같은 방식) ----------
+     미리보기(app.js)는 ```mermaid 를 DIAG.render 로 SVG 를 그리는데, 예전 hwpx 는 코드 줄을 그대로 넣어 산출물이 달랐다.
+     SVG→canvas(2배)→PNG 로 래스터화해 t._png 로 붙여 두면 blocks() 가 그림 문단으로 낸다.
+     판정 규칙은 미리보기와 동일: 언어가 mermaid 인 블록만(이름 없는 블록은 그대로), 미지원 종류는 코드 그대로 둔다. */
+  function svgToPng(svg) {
+    return new Promise(function (resolve, reject) {
+      /* 루트에 width/height 가 없으면 viewBox 로 채움(없으면 <img> 가 300×150 기본값으로 그려 잘림) */
+      svg = String(svg).replace(/<svg\b[^>]*>/, function (tag) {
+        if (/\swidth=/.test(tag) && /\sheight=/.test(tag)) return tag;
+        var vb = /viewBox="\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)\s*"/.exec(tag);
+        return vb ? tag.replace(/^<svg/, '<svg width="' + vb[1] + '" height="' + vb[2] + '"') : tag;
+      });
+      var url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+      var img = new Image();
+      img.onload = function () {
+        var nw = img.naturalWidth || 800, nh = img.naturalHeight || 400, scale = 2;
+        var c = document.createElement('canvas'); c.width = Math.round(nw * scale); c.height = Math.round(nh * scale);
+        var g = c.getContext('2d'); g.fillStyle = '#ffffff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        c.toBlob(function (b) { if (!b) { reject(new Error('toBlob 실패')); return; } b.arrayBuffer().then(function (ab) { resolve({ data: new Uint8Array(ab), w: nw, h: nh }); }, reject); }, 'image/png');
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('SVG 로드 실패')); };
+      img.src = url;
+    });
+  }
+  function isMermaid(t) { return t.type === 'code' && (t.lang || '').trim().toLowerCase() === 'mermaid'; }
+  function renderDiagram(t) {
+    return Promise.resolve().then(function () {
+      if (!window.DIAG || typeof document === 'undefined') return;
+      var kind = window.DIAG.detectKind(t.text || '');
+      if (!kind) return;   /* 미지원 종류 → 코드 블록 그대로(원문 보존) */
+      return svgToPng(window.DIAG.render(kind, t.text || '')).then(function (png) { t._png = png; });
+    }).catch(function () { /* 래스터화 실패 → 코드 블록으로 폴백 */ });
+  }
+  function resolveDiagrams(tokens) {
+    var jobs = [];
+    (function walk(toks) {
+      (toks || []).forEach(function (t) {
+        if (isMermaid(t)) jobs.push(renderDiagram(t));
+        if (t.tokens) walk(t.tokens);
+        if (t.items) walk(t.items);
+      });
+    })(tokens);
+    return Promise.all(jobs);
+  }
+
+  /* ---------- 이미지 형식 정리 (async) ----------
+     붙여넣기·끌어 넣기 이미지는 앱이 WebP 로 줄여 담고(SVG 는 그대로), WebP·SVG 는 크기를 못 읽어 400×300(4:3)으로 찌그러지고
+     한글에 따라 아예 안 보인다 → png/jpg/gif/bmp 가 아니면 브라우저로 디코드해 PNG(실제 픽셀 크기, SVG 는 2배로 선명하게)로 바꿔 둔다.
+     문서의 모든 이미지를 href 별로 한 번씩 읽어 맵으로 돌려준다(모듈 상태는 건드리지 않음 — 변환이 겹쳐도 안전). */
+  function bytesToPng(bytes, hint) {
+    var head = '';
+    try { head = new TextDecoder().decode(bytes.subarray(0, 512)); } catch (e) { }
+    if (/svg/i.test(hint || '') || /<svg[\s>]/i.test(head)) return svgToPng(new TextDecoder().decode(bytes));
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(new Blob([bytes], { type: hint || 'application/octet-stream' }));
+      var img = new Image();
+      img.onload = function () {
+        var w = img.naturalWidth, h = img.naturalHeight;
+        if (!w || !h) { URL.revokeObjectURL(url); reject(new Error('이미지 크기 없음')); return; }
+        var c = document.createElement('canvas'); c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0);   /* 투명도는 PNG 로 그대로 */
+        URL.revokeObjectURL(url);
+        c.toBlob(function (b) { if (!b) { reject(new Error('toBlob 실패')); return; } b.arrayBuffer().then(function (ab) { resolve({ data: new Uint8Array(ab), w: w, h: h }); }, reject); }, 'image/png');
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('이미지 디코드 실패')); };
+      img.src = url;
+    });
+  }
+  function collectImgHrefs(tokens) {
+    var set = {};
+    function add(h) { if (h) set[h] = 1; }
+    (function walk(toks) {
+      (toks || []).forEach(function (t) {
+        if (!t) return;
+        if (t.type === 'image') add(parseImgSpec(t).href);
+        if (t.type === 'html' && /<table/i.test(t.text || '')) {   /* HTML 표 안 <img> (segRuns 와 같은 추출) */
+          var re = /<img\b[^>]*>/gi, m;
+          while ((m = re.exec(t.text))) { var src = (m[0].match(/src\s*=\s*["']([^"']+)["']/i) || [])[1]; if (src) add(parseImgSpec({ href: src }).href); }
+        }
+        if (t.tokens) walk(t.tokens);
+        if (t.items) walk(t.items);
+        if (t.header) t.header.forEach(function (c) { walk(c.tokens); });   /* GFM 표 셀 */
+        if (t.rows) t.rows.forEach(function (r) { r.forEach(function (c) { walk(c.tokens); }); });
+      });
+    })(tokens);
+    return Object.keys(set);
+  }
+  function resolveImages(tokens, resolver) {
+    var map = {};
+    var canDecode = typeof document !== 'undefined' && typeof Image !== 'undefined';
+    var jobs = collectImgHrefs(tokens).map(function (href) {
+      var info = srcInfo(href, resolver);
+      if (!info) return null;
+      map[href] = info;
+      if (sniffImg(info.bytes) || !canDecode) return null;   /* 한글이 읽는 형식 → 원본 그대로 */
+      return bytesToPng(info.bytes, info.hint).then(function (png) {
+        map[href] = { bytes: png.data, ext: 'png', mime: 'image/png', w: png.w, h: png.h };
+      }, function () { /* 디코드 실패 → 원본 그대로(예전 동작) */ });
+    });
+    return Promise.all(jobs).then(function () { return map; });
+  }
+  /* 다이어그램 그림 문단: 가운데 정렬(TPL.CENTER) + 줄 높이=그림 높이(lineseg 캐시가 그림보다 낮으면 한글이 겹쳐 그릴 수 있음) */
+  function picPara(pic) {
+    var m = /<hp:curSz width="\d+" height="(\d+)"/.exec(pic), h = m ? +m[1] : 1000;
+    return '<hp:p id="0" paraPrIDRef="' + TPL.CENTER + '" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="' + TPL.STYLE.normal.char + '">' + pic + '</hp:run>' + lineseg(h) + '</hp:p>';
   }
   function decode(s) { if (s == null) return ''; return String(s).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' '); }
   function parseFrontmatter(t) {
@@ -330,7 +472,12 @@
         case 'paragraph': out.push(paraOf(inlineRuns(t.tokens, TPL.STYLE.normal.char), TPL.STYLE.normal, 1000)); break;
         case 'text': out.push(paraOf(t.tokens ? inlineRuns(t.tokens, TPL.STYLE.normal.char) : [{ c: TPL.STYLE.normal.char, t: decode(t.text) }], TPL.STYLE.normal, 1000)); break;
         case 'blockquote': blocks(t.tokens, out); break;
-        case 'code': if ((t.lang || '').toLowerCase() === 'toc') { tocBlocks(t.text, out); } else { String(t.text || '').replace(/\n$/, '').split('\n').forEach(function (ln) { out.push(paraOf([{ c: TPL.CUSTOM.code, t: ln || ' ' }], TPL.STYLE.normal, 1000)); }); } break;
+        case 'code': {
+          var dpic = t._png ? addPng(t._png) : null;   /* resolveDiagrams 가 그려 둔 mermaid → 그림 문단 */
+          if (dpic) out.push(picPara(dpic));
+          else if ((t.lang || '').toLowerCase() === 'toc') tocBlocks(t.text, out);
+          else String(t.text || '').replace(/\n$/, '').split('\n').forEach(function (ln) { out.push(paraOf([{ c: TPL.CUSTOM.code, t: ln || ' ' }], TPL.STYLE.normal, 1000)); });
+        } break;
         case 'list': listBlocks(t, 1, out); break;
         case 'table': out.push(buildTable(t)); break;
         case 'html': { var h = t.text || t.raw || ''; if (/<table[\s>]/i.test(h)) out.push(buildHtmlTable(h)); } break;
@@ -476,8 +623,6 @@
 
     var fm = parseFrontmatter(md || ''), meta = fm.meta, body = fm.body;
     var pageFrame = !!(settings && settings.pageFrame);   /* 테두리는 문서 설정(UI)으로 전달 */
-    CONTENT_W = pageFrame ? (BASE_CONTENT_W - 2 * FRAME_PAD - 566) : BASE_CONTENT_W;   /* 프레임 안쪽 폭으로 본문·표 생성(내부표 바깥여백 283*2=566 버퍼로 셀 넘침 방지) */
-    CELLM = pageFrame ? 'left="360" right="360" top="240" bottom="240"' : 'left="510" right="510" top="141" bottom="141"';   /* 프레임: 좌우 360 유지, 상하만 360→240 축소(표 컴팩트) */
     var title = meta.title || meta['제목'] || '';
     var subtitle = meta.subtitle || meta['부제'] || '';
     if (title) body = body.replace(/^\s*#\s+(.*)\r?\n/, function (m0, h) { return h.trim() === title.trim() ? '' : m0; });
@@ -485,48 +630,56 @@
     /* 정부문서엔 들여쓰기(공백4+) 코드블록이 없음 → 감지 비활성(펜스 ```는 유지). 미리보기와 동일 규칙 */
     if (!window.marked.__noIndentCode) { window.marked.__noIndentCode = 1; window.marked.use({ tokenizer: { code: function () { return undefined; } } }); }
     var tokens = window.marked.lexer(body);
-    numCtr = [0, 0, 0, 0, 0]; imgList = []; picSeq = 0;
-    imgResolver = (settings && settings.imageResolver) || null;
-    var coverP = coverParas(meta) || [];   /* 프레임 밖: 표지 */
-    if (!coverP.length) {
-      if (title) coverP.push(paraOf([{ c: TPL.STYLE.h[1].char, t: title }], TPL.STYLE.h[1], HH[1]));
-      if (subtitle) coverP.push(paraOf([{ c: TPL.STYLE.h[2].char, t: subtitle }], TPL.STYLE.h[2], HH[2]));
-    }
-    var tocP = [], framedParas = [], tocSeen = false;   /* tocP=프레임 밖 목차, framedParas=프레임 안 본문 */
-    (tokens || []).forEach(function (t) {
-      if (!tocSeen && t.type === 'code' && (t.lang || '').toLowerCase() === 'toc') { blocks([t], tocP); tocSeen = true; }
-      else blocks([t], framedParas);
+
+    /* 다이어그램(mermaid) PNG 와 이미지 형식 정리를 먼저 끝낸다(비동기). 모듈 상태(CONTENT_W·CELLM·imgList·imgMap 등)는
+       그 뒤 동기 구간에서만 설정한다 — 저장을 연달아 눌러 변환이 겹쳐도 서로의 상태를 섞지 않게. */
+    var resolver = (settings && settings.imageResolver) || null;
+    return Promise.all([resolveDiagrams(tokens), resolveImages(tokens, resolver)]).then(function (res) {
+      CONTENT_W = pageFrame ? (BASE_CONTENT_W - 2 * FRAME_PAD - 566) : BASE_CONTENT_W;   /* 프레임 안쪽 폭으로 본문·표 생성(내부표 바깥여백 283*2=566 버퍼로 셀 넘침 방지) */
+      CELLM = pageFrame ? 'left="360" right="360" top="240" bottom="240"' : 'left="510" right="510" top="141" bottom="141"';   /* 프레임: 좌우 360 유지, 상하만 360→240 축소(표 컴팩트) */
+      numCtr = [0, 0, 0, 0, 0]; imgList = []; picSeq = 0;
+      imgResolver = resolver; imgMap = res[1] || {};
+      var coverP = coverParas(meta) || [];   /* 프레임 밖: 표지 */
+      if (!coverP.length) {
+        if (title) coverP.push(paraOf([{ c: TPL.STYLE.h[1].char, t: title }], TPL.STYLE.h[1], HH[1]));
+        if (subtitle) coverP.push(paraOf([{ c: TPL.STYLE.h[2].char, t: subtitle }], TPL.STYLE.h[2], HH[2]));
+      }
+      var tocP = [], framedParas = [], tocSeen = false;   /* tocP=프레임 밖 목차, framedParas=프레임 안 본문 */
+      (tokens || []).forEach(function (t) {
+        if (!tocSeen && t.type === 'code' && (t.lang || '').toLowerCase() === 'toc') { blocks([t], tocP); tocSeen = true; }
+        else blocks([t], framedParas);
+      });
+      if (coverP.length && tocP.length) tocP[0] = breakBefore(tocP[0]);   /* 표지 뒤 목차는 새 페이지부터 */
+      /* 표지·목차 페이지는 쪽번호 숨김(원본과 동일: 본문부터 번호). pageNum은 본문 첫 문단(buildSection0) */
+      var PAGEHIDE = '<hp:ctrl><hp:pageHiding hideHeader="0" hideFooter="0" hideMasterPage="0" hideBorder="0" hideFill="0" hidePageNum="1"/></hp:ctrl>';
+      if (coverP.length) coverP[0] = injectHead(coverP[0], PAGEHIDE);
+      if (tocP.length) tocP[0] = injectHead(tocP[0], PAGEHIDE);
+      var preParas = coverP.concat(tocP);
+
+      var section0 = buildSection0(preParas, framedParas, pageFrame);
+      /* 표지용 큰 글자 charPr 추가(37=24pt굵게 제목·38=20pt 작성기관·39=16pt 고객사/사업명·40=14pt 작성일) → 헤더에 주입 */
+      function mkCP(baseId, newId, h) { var b = new RegExp('<hh:charPr id="' + baseId + '"[\\s\\S]*?</hh:charPr>').exec(TPL.HEADER); return b ? b[0].replace('id="' + baseId + '"', 'id="' + newId + '"').replace(/height="\d+"/, 'height="' + h + '"').replace(/<hh:fontRef [^>]*\/>/, '<hh:fontRef hangul="3" latin="3" hanja="3" japanese="3" other="3" symbol="3" user="3"/>') : ''; }   /* 표지 글꼴 = 바탕체(id 3, 원본과 동일) */
+      var coverCP = mkCP(9, 37, 2600) + mkCP(1, 38, 2200) + mkCP(9, 39, 2000);   // 37=제목26pt굵게, 38=사업명·작성기관22pt, 39=고객사·작성일20pt굵게 (원본값)
+      var bf7 = /<hh:borderFill id="7"[\s\S]*?<\/hh:borderFill>/.exec(TPL.HEADER)[0];
+      var bf14 = bf7.replace('id="7"', 'id="14"').replace('faceColor="#F2F3F9"', 'faceColor="#DFDFDF"');   // 표지 박스 회색(#DFDFDF, 원본과 동일)
+      var headerXml = TPL.HEADER
+        .replace('</hh:charProperties>', coverCP + '</hh:charProperties>').replace(/<hh:charProperties itemCnt="\d+">/, '<hh:charProperties itemCnt="40">')
+        .replace('</hh:borderFills>', bf14 + '</hh:borderFills>').replace(/<hh:borderFills itemCnt="\d+">/, '<hh:borderFills itemCnt="14">');
+      var prvText = (title ? title + '\n' : '') + tokens.map(function (t) { return (t.type === 'paragraph' || t.type === 'heading') ? inlineText(t.tokens) : ''; }).filter(Boolean).join('\n').slice(0, 2000);
+
+      var z = new JSZip();
+      z.file('mimetype', 'application/hwp+zip', { compression: 'STORE' });
+      z.file('version.xml', TPL.VERSION || VERSION_XML);
+      z.file('settings.xml', TPL.SETTINGS || SETTINGS_XML);
+      z.file('META-INF/container.xml', CONTAINER_XML);
+      z.file('META-INF/manifest.xml', MANIFEST_XML);
+      z.file('Contents/content.hpf', buildContentHpf(title));
+      z.file('Contents/header.xml', headerXml);
+      z.file('Contents/section0.xml', section0);
+      z.file('Preview/PrvText.txt', prvText || (title || 'MDhwpify'));
+      imgList.forEach(function (im) { z.file('BinData/' + im.binId + '.' + im.ext, im.bytes); });
+      return z.generateAsync({ type: 'blob', mimeType: 'application/hwp+zip', compression: 'DEFLATE' });
     });
-    if (coverP.length && tocP.length) tocP[0] = breakBefore(tocP[0]);   /* 표지 뒤 목차는 새 페이지부터 */
-    /* 표지·목차 페이지는 쪽번호 숨김(원본과 동일: 본문부터 번호). pageNum은 본문 첫 문단(buildSection0) */
-    var PAGEHIDE = '<hp:ctrl><hp:pageHiding hideHeader="0" hideFooter="0" hideMasterPage="0" hideBorder="0" hideFill="0" hidePageNum="1"/></hp:ctrl>';
-    if (coverP.length) coverP[0] = injectHead(coverP[0], PAGEHIDE);
-    if (tocP.length) tocP[0] = injectHead(tocP[0], PAGEHIDE);
-    var preParas = coverP.concat(tocP);
-
-    var section0 = buildSection0(preParas, framedParas, pageFrame);
-    /* 표지용 큰 글자 charPr 추가(37=24pt굵게 제목·38=20pt 작성기관·39=16pt 고객사/사업명·40=14pt 작성일) → 헤더에 주입 */
-    function mkCP(baseId, newId, h) { var b = new RegExp('<hh:charPr id="' + baseId + '"[\\s\\S]*?</hh:charPr>').exec(TPL.HEADER); return b ? b[0].replace('id="' + baseId + '"', 'id="' + newId + '"').replace(/height="\d+"/, 'height="' + h + '"').replace(/<hh:fontRef [^>]*\/>/, '<hh:fontRef hangul="3" latin="3" hanja="3" japanese="3" other="3" symbol="3" user="3"/>') : ''; }   /* 표지 글꼴 = 바탕체(id 3, 원본과 동일) */
-    var coverCP = mkCP(9, 37, 2600) + mkCP(1, 38, 2200) + mkCP(9, 39, 2000);   // 37=제목26pt굵게, 38=사업명·작성기관22pt, 39=고객사·작성일20pt굵게 (원본값)
-    var bf7 = /<hh:borderFill id="7"[\s\S]*?<\/hh:borderFill>/.exec(TPL.HEADER)[0];
-    var bf14 = bf7.replace('id="7"', 'id="14"').replace('faceColor="#F2F3F9"', 'faceColor="#DFDFDF"');   // 표지 박스 회색(#DFDFDF, 원본과 동일)
-    var headerXml = TPL.HEADER
-      .replace('</hh:charProperties>', coverCP + '</hh:charProperties>').replace(/<hh:charProperties itemCnt="\d+">/, '<hh:charProperties itemCnt="40">')
-      .replace('</hh:borderFills>', bf14 + '</hh:borderFills>').replace(/<hh:borderFills itemCnt="\d+">/, '<hh:borderFills itemCnt="14">');
-    var prvText = (title ? title + '\n' : '') + tokens.map(function (t) { return (t.type === 'paragraph' || t.type === 'heading') ? inlineText(t.tokens) : ''; }).filter(Boolean).join('\n').slice(0, 2000);
-
-    var z = new JSZip();
-    z.file('mimetype', 'application/hwp+zip', { compression: 'STORE' });
-    z.file('version.xml', TPL.VERSION || VERSION_XML);
-    z.file('settings.xml', TPL.SETTINGS || SETTINGS_XML);
-    z.file('META-INF/container.xml', CONTAINER_XML);
-    z.file('META-INF/manifest.xml', MANIFEST_XML);
-    z.file('Contents/content.hpf', buildContentHpf(title));
-    z.file('Contents/header.xml', headerXml);
-    z.file('Contents/section0.xml', section0);
-    z.file('Preview/PrvText.txt', prvText || (title || 'MDhwpify'));
-    imgList.forEach(function (im) { z.file('BinData/' + im.binId + '.' + im.ext, im.bytes); });
-    return z.generateAsync({ type: 'blob', mimeType: 'application/hwp+zip', compression: 'DEFLATE' });
   }
 
   window.MD2HWPX = { convert: convert };

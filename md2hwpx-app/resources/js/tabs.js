@@ -46,7 +46,7 @@
     var act=bar.querySelector(".tab.active");if(act&&act.scrollIntoView){try{act.scrollIntoView({inline:"nearest",block:"nearest"});}catch(e){}}
   }
 
-  function snapshotActive(){
+  function snapshotActive(noAi){   /* noAi=true: AI 대화는 떼지 않음(연결 복구용 내보내기 — 패널을 비우지 않게) */
     if(activeId==null)return;var s=byId(activeId);if(!s)return;var t=ta();
     if(t)s.text=t.value;
     if(window.__getSaved)s.baseline=window.__getSaved();
@@ -54,7 +54,7 @@
     s.name=window.__mdName||s.name;s.fname=window.__fname||s.fname;
     s.drop=window.__drop||{};s.imgFiles=window.__imgFiles||[];
     if(t)s.scroll=t.scrollTop;
-    if(window.__aiSnapshot)s.ai=window.__aiSnapshot();   /* AI 대화도 문서에 딸려 보관 */
+    if(!noAi&&window.__aiSnapshot)s.ai=window.__aiSnapshot();   /* AI 대화도 문서에 딸려 보관 */
   }
   /* 세션 → 라이브(전환/복원): baseline 보존(dirty 유지), __setEditorText 안 씀(그건 baseline clean 리셋) */
   function restore(s){
@@ -78,12 +78,15 @@
   function openDoc(meta){
     meta=meta||{};snapshotActive();
     if(meta.path){var ex=findByPath(meta.path);if(ex){activeId=ex.id;restore(ex);renderTabs();return;}}   /* 이미 열림 → 포커스 */
-    var s={id:seq++,path:meta.path||null,dir:meta.dir||null,name:meta.name||"document",fname:meta.fname||"document",text:meta.text||"",baseline:meta.text||"",drop:meta.drop||{},imgFiles:[],scroll:0};
+    /* meta.baseline: 저장 기준선을 따로 줄 때(연결 복구 — 미저장 편집의 ● 표시 유지). 없으면 열자마자 clean */
+    var hasBase=(typeof meta.baseline==="string");
+    var s={id:seq++,path:meta.path||null,dir:meta.dir||null,name:meta.name||"document",fname:meta.fname||"document",text:meta.text||"",baseline:hasBase?meta.baseline:(meta.text||""),drop:meta.drop||{},imgFiles:[],scroll:0};
     sessions.push(s);activeId=s.id;
     window.__mdPath=s.path;window.__mdDir=s.dir;window.__mdName=s.name;window.__fname=s.fname;window.__drop=s.drop;window.__imgFiles=[];
     document.body.classList.add("loaded");
     if(window.__relayoutPanes)window.__relayoutPanes();
     if(window.__setEditorText)window.__setEditorText(s.text);   /* 새 탭 로드(baseline clean, 미러·프리뷰 일괄) */
+    if(hasBase&&window.__setSaved)window.__setSaved(s.baseline);   /* 기준선 복원 → 미저장이면 ● 그대로 */
     if(window.__renderFileBadge)window.__renderFileBadge();
     if(window.__aiRestore)window.__aiRestore(s.ai);   /* 새 문서 = 새 대화(restore 를 안 거치는 경로라 여기서 직접 — 빠뜨리면 이전 대화가 새 문서로 샘) */
     renderTabs();
@@ -140,6 +143,14 @@
       chip.title=(s.path||s.name)+(ai?"  ·  AI 대화 있음":"");
     });
   };
+  /* 연결 끊김 복구(recover.js)용: 모든 탭을 직렬화 가능한 형태로(활성 탭은 라이브 상태 반영 후) + 활성 탭 순번 */
+  window.__tabsExport=function(){
+    snapshotActive(true);
+    var act=-1;
+    var docs=sessions.map(function(s,i){if(s.id===activeId)act=i;return {path:s.path,dir:s.dir,name:s.name,fname:s.fname,text:s.text,baseline:s.baseline,drop:s.drop||{}};});
+    return {active:act,docs:docs};
+  };
+  window.__tabsActivate=function(i){var s=sessions[i];if(s)switchTo(s.id);};
   window.__openDoc=openDoc;
   window.__tabsCount=function(){return sessions.length;};
   window.__closeActiveTab=function(){if(activeId!=null)closeTab(activeId);};

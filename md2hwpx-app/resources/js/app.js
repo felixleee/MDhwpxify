@@ -227,7 +227,10 @@
     var blobUrl=null;try{blobUrl=URL.createObjectURL(new Blob([PAGED_CSS],{type:"text/css"}));}catch(e){}
     try{
       var prev=new window.PagedModule.Previewer();
-      prev.preview("<style>"+PAGED_CSS+"</style>"+src.innerHTML, blobUrl?[blobUrl]:[], pages).then(function(flow){
+      /* 콘텐츠 맨 앞에 <style> 을 붙이면 Paged.js 가 첫 페이지를 복제한다(표지 없는 문서에서 발현, MDeautify 4477cb3).
+         → PAGED_CSS 는 스타일시트(blobUrl)로만 넘기고, blob 생성 실패 시에만 인라인 <style> 폴백. */
+      var content=blobUrl?src.innerHTML:("<style>"+PAGED_CSS+"</style>"+src.innerHTML);
+      prev.preview(content, blobUrl?[blobUrl]:[], pages).then(function(flow){
         if(blobUrl){try{URL.revokeObjectURL(blobUrl);}catch(e){}}
         if(myGen!==window.__pgGen)return;   /* 스테일 결과 폐기(더 새 조판이 진행 중) */
         /* A2 오버플로 검출 → 자동 재조판: 조판 경쟁으로 내용이 단을 넘으면(scrollWidth>clientWidth) 최대 2회 재시도 */
@@ -327,6 +330,8 @@
   async function saveDocx(){
     var md=$('editor').value||'';
     if(!md.trim()){alert('내용이 없습니다. 먼저 MD를 입력하거나 파일을 여세요.');return;}
+    /* 파일 이름은 지금 탭 기준(__fname). curName 은 탭 전환·다른 이름으로 저장 때 안 바뀌어 다른 문서 이름이 붙었다. 변환 중 탭을 바꿔도 안 흔들리게 시작 시점에 고정 */
+    var name=window.__fname||curName||'document';
     var tpl=TEMPLATES[curTemplate]||window.TPL_CLEAN;
     setBusy(true);
     try{
@@ -346,10 +351,10 @@
       };
       var blob=await window.MD2HWPX.convert(md,tpl,Object.assign({},window.__docSettings,{imageResolver:resolver,pageFrame:docOpts.frame}));
       var url=URL.createObjectURL(blob);
-      var a=document.createElement('a');a.href=url;a.download=curName+'.hwpx';
+      var a=document.createElement('a');a.href=url;a.download=name+'.hwpx';
       document.body.appendChild(a);a.click();a.remove();
       setTimeout(function(){URL.revokeObjectURL(url);},1000);
-      showSavedModal(curName);   /* 저장 완료 → 실제 한글에서 확인 안내 */
+      showSavedModal(name);   /* 저장 완료 → 실제 한글에서 확인 안내 */
     }catch(err){console.error(err);alert('변환 실패: '+(err&&err.message?err.message:err));}
     finally{setBusy(false);}
   }
@@ -654,6 +659,7 @@ window.__resolveLocalImages=async function(src){
     if(!document.body.classList.contains("loaded"))return true;
     if(!(window.__isDirty&&window.__isDirty()))return true;
     if(window.__autoSave&&window.__mdPath){if(window.__saveMd)await window.__saveMd();return true;}
+    if(window.__openDoc)return true;   /* 탭: 새 문서는 새 탭으로 열리고 지금 문서는 ● 그대로 남음 → 교체가 아니니 묻지 않음(탭 이전 코드의 잔재였음) */
     if(window.__confirmSave3){
       var choice=await window.__confirmSave3({title:"저장하고 열기",message:"편집 중인 문서에 저장하지 않은 변경사항이 있어요.\n저장한 뒤 새 문서를 열까요?",saveText:"저장하고 열기",discardText:"저장 안 함",cancelText:"취소"});
       if(choice==="cancel")return false;
@@ -979,8 +985,10 @@ window.__resolveLocalImages=async function(src){
     var dest=/\s/.test(ref)?"<"+ref+">":ref;
     if(window.__img&&window.__img.insert)window.__img.insert("!["+alt+"]("+dest+")");   /* 커서 삽입 + onEdit → 미러·미리보기 갱신 */
   };
-  /* 실행 인자로 넘어온 .md 자동 열기(더블클릭/연결앱/아이콘에 드롭) */
-  try{var a=window.NL_ARGS||[];for(var i=1;i<a.length;i++){if(isMdPath(a[i])&&isAbs(a[i])){openMd(a[i]);break;}}}catch(e){}
+  /* 실행 인자로 넘어온 .md 자동 열기(더블클릭/연결앱/아이콘에 드롭).
+     연결 끊김 복구(recover.js) 대기 중이면 건너뜀 — 새로고침해도 NL_ARGS 는 처음 그대로라 같은 파일이 또 열리고, 복원본이 우선이다. */
+  try{var hasRecover=false;try{hasRecover=!!localStorage.getItem("mdhwpxify_recover");}catch(_){}
+    if(!hasRecover){var a=window.NL_ARGS||[];for(var i=1;i<a.length;i++){if(isMdPath(a[i])&&isAbs(a[i])){openMd(a[i]);break;}}}}catch(e){}
 })();
 
 /* ===== GitHub 릴리스 목록 공유 캐시 (업데이트 확인 + 릴리스 노트가 함께 사용) — MDeautify 구조 이식 =====
