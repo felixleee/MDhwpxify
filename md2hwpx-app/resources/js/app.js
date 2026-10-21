@@ -35,16 +35,6 @@
   function syncMirror(){var r=$('raw'),ta=$('editor');if(r&&ta){r.innerHTML=hlMd(ta.value);}}
   window.__syncMirror=syncMirror;
 
-  function fixLooseLists(t){
-    var lines=t.split("\n"),out=[];var isItem=function(s){return /^\s*([-*+]|\d+\.)\s+/.test(s);};
-    for(var i=0;i<lines.length;i++){if(isItem(lines[i])){var p=out.length?out[out.length-1]:"";if(p.trim()&&!isItem(p))out.push("");}out.push(lines[i]);}
-    return out.join("\n");
-  }
-  function parseFrontmatter(t){
-    var m=t.match(/^---\s*\n([\s\S]*?)\n---\s*\n/),meta={};if(!m)return{meta:meta,body:t};
-    m[1].split("\n").forEach(function(line){var i=line.indexOf(":");if(i>0)meta[line.slice(0,i).trim()]=line.slice(i+1).trim().replace(/^["']|["']$/g,"");});
-    return{meta:meta,body:t.slice(m[0].length)};
-  }
   function buildCover(meta){
     var client=meta["고객사"]||meta["도입기업"]||"";
     var kicker=meta["사업명"]||meta.kicker||"";
@@ -98,49 +88,13 @@
 
   /* ---------- 소스(.content) 빌드 ---------- */
   function buildSource(text){
-    var fm=parseFrontmatter(text),meta=fm.meta;
+    /* 마크다운 보정(느슨한 목록·표지 제목·이미지 크기 문법·공백 경로)과 marked 설정은 hwpx 변환과 같은 공용 전처리(md-prep.js) —
+       미리보기만 따로 고치면 같은 원문이 산출물에서 다르게 해석된다. srcMap: srcmd 각 줄 → 원본 text 줄(스크롤 sync 방식 B, 삽입줄=-1) */
+    var prep=window.MDPREP.prepare(text),meta=prep.meta;
     pvFrame=!!docOpts.frame;   /* 테두리: 문서 설정 모달로 제어 */
     document.body.classList.toggle('mdocify-frame',pvFrame);   /* 프레임 CSS는 메인 style.css에서 .pagedjs_* chrome 에 적용(주입 X) */
-    /* 스크롤 sync(방식 B)용 줄맵: srcmd 각 줄 → 원본 text 줄(0-based, 삽입줄=-1).
-       프론트매터 오프셋(F) + fixLooseLists 삽입줄을 추적. srcmd 결과 문자열은 기존과 동일. */
-    var _F=0,_fmM=text.match(/^---\s*\n([\s\S]*?)\n---\s*\n/);if(_fmM)_F=(_fmM[0].match(/\n/g)||[]).length;
-    var _bl=fm.body.split("\n"),_bo=[];for(var _bi=0;_bi<_bl.length;_bi++)_bo.push(_F+_bi);
-    var _isItem=function(s){return /^\s*([-*+]|\d+\.)\s+/.test(s);};
-    var _fl=[],_fo=[];   /* fixLooseLists 와 동일 알고리즘(줄맵 동반) */
-    for(var _j=0;_j<_bl.length;_j++){if(_isItem(_bl[_j])){var _p=_fl.length?_fl[_fl.length-1]:"";if(_p.trim()&&!_isItem(_p)){_fl.push("");_fo.push(-1);}}_fl.push(_bl[_j]);_fo.push(_bo[_j]);}
-    var title=meta.title||meta["제목"]||"";
-    if(title){for(var _q=0;_q<_fl.length;_q++){if(_fl[_q].trim()===""){continue;}var _tm=_fl[_q].match(/^\s*#\s+(.*?)\s*$/);if(_tm&&_tm[1].trim()===title.trim()){_fl.splice(_q,1);_fo.splice(_q,1);}break;}}
-    var srcmd=_fl.join("\n"),srcMap=_fo;
-    window.marked.setOptions({gfm:true,breaks:false});
-    if(!window.marked.__delFix){window.marked.__delFix=1;window.marked.use({tokenizer:{del(src){var m=/^~~(?=\S)([\s\S]*?\S)~~/.exec(src);if(m){return {type:"del",raw:m[0],text:m[1],tokens:this.lexer.inlineTokens(m[1])};}if(src.charCodeAt(0)===126){return {type:"text",raw:"~",text:"~"};}return false;}}});}
-    /* 들여쓰기 코드블록 감지 끔(펜스 ```는 유지) → 정부문서 들여쓴 하위항목이 다크 코드박스로 오인되지 않게. 산출물과 동일 규칙 */
-    if(!window.marked.__noIndentCode){window.marked.__noIndentCode=1;window.marked.use({tokenizer:{code:function(){return undefined;}}});}
-    /* 이미지 크기 단축 문법(=300x200·=300x·=x200·=50%·=300)→<img> + 공백 경로 <>감싸기.
-       코드블록(```/~~~, 백틱 개수 무관)·인라인 코드 밖에서만(문법 예시 보호). 줄 수 유지. */
-    function outsideCode(text,fn){
-      var lines=text.split("\n"),out=[],fence=null;
-      for(var li=0;li<lines.length;li++){var ln=lines[li],fm2=ln.match(/^\s*(`{3,}|~{3,})/);
-        if(fence){out.push(ln);if(fm2&&fm2[1].charAt(0)===fence.ch&&fm2[1].length>=fence.len&&/^\s*(`{3,}|~{3,})\s*$/.test(ln))fence=null;continue;}
-        if(fm2){fence={ch:fm2[1].charAt(0),len:fm2[1].length};out.push(ln);continue;}
-        out.push(ln.split(/(`+[^`]*`+)/g).map(function(seg,i){return i%2?seg:fn(seg);}).join(""));
-      }
-      return out.join("\n");
-    }
-    srcmd=outsideCode(srcmd,function(s){
-      s=s.replace(/!\[([^\]]*)\]\(\s*([^()]*(?:\([^)]*\)[^()]*)*?)\s+=\s*(\d+x\d+|\d+x|x\d+|\d+%|\d+)\s*\)/g,function(m,alt,dest,sz){
-        var d=dest.replace(/^<|>$/g,"").trim();if(!d||/["']/.test(d))return m;
-        var a;
-        if(/^\d+x\d+$/.test(sz)){var p=sz.split("x");a=' width="'+p[0]+'" height="'+p[1]+'"';}
-        else if(/^\d+x$/.test(sz))a=' width="'+sz.slice(0,-1)+'"';
-        else if(/^x\d+$/.test(sz))a=' height="'+sz.slice(1)+'"';
-        else if(/^\d+%$/.test(sz))a=' style="width:'+sz.slice(0,-1)+'%"';
-        else a=' width="'+sz+'"';
-        function ea(x){return String(x).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-        return '<img src="'+ea(d)+'" alt="'+ea(alt)+'"'+a+'>';
-      });
-      s=s.replace(/!\[([^\]]*)\]\(\s*([^()]*(?:\([^)]*\)[^()]*)*)\s*\)/g,function(m,alt,dest){if(!dest||dest.charAt(0)==="<")return m;if(/["']/.test(dest))return m;if(!/\s/.test(dest))return m;return "!["+alt+"](<"+dest.trim()+">)";});
-      return s;
-    });
+    var srcmd=prep.md,srcMap=prep.map;
+    window.MDPREP.setupMarked();
     var src=$('src');
     src.innerHTML=buildCover(meta)+"<div class='content'>"+window.marked.parse(srcmd)+"</div>";
     src.querySelectorAll(".content a[href]").forEach(function(a){a.setAttribute("target","_blank");a.setAttribute("rel","noopener noreferrer");});
@@ -321,56 +275,74 @@
       return {bytes:bytes,ext:ext};
     }catch(e){return null;}
   }
-  /* md의 모든 이미지 src 수집 */
-  function collectSrcs(md){
-    var set={},m,re1=/!\[[^\]]*\]\(\s*<?([^)>\s"]+)/g,re2=/<img\b[^>]*?src\s*=\s*["']([^"']+)["']/gi;
-    while((m=re1.exec(md)))set[m[1]]=1; while((m=re2.exec(md)))set[m[1]]=1;
-    return Object.keys(set);
-  }
+  /* 마지막으로 hwpx 를 저장한 폴더(.md 경로가 없는 문서의 기본 위치) — mdocify_ 접두어라 exe 에선 settings.json 에 남는다 */
+  var HWPX_DIR_KEY='mdocify_lastHwpxDir';
+  function lastHwpxDir(){try{return localStorage.getItem(HWPX_DIR_KEY)||'';}catch(e){return '';}}
+  function rememberHwpxDir(p){try{localStorage.setItem(HWPX_DIR_KEY,p.replace(/[\\\/][^\\\/]*$/,''));}catch(e){}}
+  function appAlert(msg,title){if(window.__appAlert)window.__appAlert(msg,title||'알림');else alert(msg);}
   async function saveDocx(){
     var md=$('editor').value||'';
-    if(!md.trim()){alert('내용이 없습니다. 먼저 MD를 입력하거나 파일을 여세요.');return;}
+    if(!md.trim()){appAlert('내용이 없습니다. 먼저 MD를 입력하거나 파일을 여세요.');return;}
     /* 파일 이름은 지금 탭 기준(__fname). curName 은 탭 전환·다른 이름으로 저장 때 안 바뀌어 다른 문서 이름이 붙었다. 변환 중 탭을 바꿔도 안 흔들리게 시작 시점에 고정 */
     var name=window.__fname||curName||'document';
     var tpl=TEMPLATES[curTemplate]||window.TPL_CLEAN;
+    var isExe=(typeof window.NL_PORT!=='undefined'&&typeof window.Neutralino!=='undefined');
+    /* exe: 저장할 곳을 먼저 고른다 — 기본은 .md 와 같은 폴더(없으면 마지막으로 hwpx 를 저장한 폴더). 예전엔 다운로드 폴더로만 갔다 */
+    var outPath=null;
+    if(isExe){
+      var dir=window.__mdDir||lastHwpxDir();
+      try{outPath=await Neutralino.os.showSaveDialog('hwpx로 저장',{defaultPath:(dir?dir+'\\':'')+name+'.hwpx',filters:[{name:'한글 문서',extensions:['hwpx']},{name:'모든 파일',extensions:['*']}]});}catch(e){outPath=null;}
+      if(!outPath)return;   /* 취소 */
+      if(!/\.hwpx$/i.test(outPath))outPath+='.hwpx';
+    }
     setBusy(true);
     try{
-      /* 파일 열기로 연 문서(__mdDir)면 원본 이미지 바이트를 디스크에서 미리 읽어둠(webp 회피 → 한글이 원본 포맷 그대로 렌더) */
-      var origMap={};
-      if(window.__mdDir&&window.__readOrigBytes){
-        var srcs=collectSrcs(md);
-        for(var i=0;i<srcs.length;i++){var sc=srcs[i];if(/^(https?:|data:|blob:)/i.test(sc))continue;
-          var r=await window.__readOrigBytes(sc);
-          if(r){var s2=sc;try{s2=decodeURIComponent(sc);}catch(e){}var base=s2.split(/[\\/]/).pop(),norm=s2.replace(/^\.\//,"").replace(/\\/g,"/");origMap[norm]=r;origMap[base]=r;origMap[sc]=r;}
+      /* 이미지 공급자: 변환기가 실제로 쓰는 경로만 물어 온다(크기 지정·공백 경로·HTML <img> 포함 — 예전엔 원문을 정규식으로 훑어 일부를 놓쳤다).
+         파일 열기로 연 문서(__mdDir)면 원본 바이트를 디스크에서 읽고(한글이 원본 형식 그대로 렌더), 없으면 드롭 풀(webp) */
+      var resolver=async function(src){
+        if(window.__mdDir&&window.__readOrigBytes&&!/^(https?:|data:|blob:)/i.test(src)){
+          var r=await window.__readOrigBytes(src);
+          if(!r){var s=src;try{s=decodeURIComponent(src);}catch(e){}if(s!==src)r=await window.__readOrigBytes(s);}
+          if(r)return r;
         }
-      }
-      var resolver=function(src){
-        var s=src;try{s=decodeURIComponent(src);}catch(e){}
-        var base=s.split(/[\\/]/).pop(),norm=s.replace(/^\.\//,"").replace(/\\/g,"/");
-        return origMap[norm]||origMap[base]||origMap[src]||dropResolver(src);   /* 원본 우선, 없으면 드롭(webp) */
+        return dropResolver(src);
       };
       var blob=await window.MD2HWPX.convert(md,tpl,Object.assign({},window.__docSettings,{imageResolver:resolver,pageFrame:docOpts.frame}));
-      var url=URL.createObjectURL(blob);
-      var a=document.createElement('a');a.href=url;a.download=name+'.hwpx';
-      document.body.appendChild(a);a.click();a.remove();
-      setTimeout(function(){URL.revokeObjectURL(url);},1000);
-      showSavedModal(name);   /* 저장 완료 → 실제 한글에서 확인 안내 */
-    }catch(err){console.error(err);alert('변환 실패: '+(err&&err.message?err.message:err));}
+      if(isExe){
+        try{await Neutralino.filesystem.writeBinaryFile(outPath,await blob.arrayBuffer());}
+        catch(e){try{Neutralino.debug.log('[hwpx] '+((e&&e.message)||e));}catch(_){}appAlert('저장하지 못했어요. 같은 이름의 파일이 한글에서 열려 있으면 닫고 다시 저장해 주세요.','저장 실패');return;}
+        rememberHwpxDir(outPath);
+        showSavedModal(outPath.replace(/^.*[\\\/]/,'').replace(/\.hwpx$/i,''),outPath);
+      }else{
+        var url=URL.createObjectURL(blob);
+        var a=document.createElement('a');a.href=url;a.download=name+'.hwpx';
+        document.body.appendChild(a);a.click();a.remove();
+        setTimeout(function(){URL.revokeObjectURL(url);},1000);
+        showSavedModal(name,null);   /* 저장 완료 → 실제 한글에서 확인 안내 */
+      }
+    }catch(err){console.error(err);appAlert('변환 실패: '+(err&&err.message?err.message:err),'오류');}
     finally{setBusy(false);}
   }
-  /* .hwpx 저장 완료 안내 모달: 미리보기는 근사치 → 실제 한글에서 최종 확인 권고 */
-  function showSavedModal(fname){
+  /* .hwpx 저장 완료 안내 모달: 미리보기는 근사치 → 실제 한글에서 최종 확인 권고. exe 면 저장 폴더 + [한글에서 열기](기본 연결 프로그램) */
+  function showSavedModal(fname,path){
     var prev=document.querySelector('.saved-modal-ov');if(prev)prev.remove();
     var ov=document.createElement('div');ov.className='saved-modal-ov';
+    var dir=path?path.replace(/[\\\/][^\\\/]*$/,''):'';
     ov.innerHTML="<div class='saved-modal' role='dialog' aria-modal='true'>"+
       "<div class='sm-ic'>📄</div>"+
       "<div class='sm-title'>hwpx 저장 완료</div>"+
       "<div class='sm-msg'><b>"+esc(fname)+".hwpx</b> 저장됨.<br>미리보기는 근사치예요 — <b>실제 한글에서 열어 최종 레이아웃을 확인</b>해 주세요.</div>"+
-      "<button type='button' class='sm-ok'>확인</button></div>";
+      (dir?"<div class='sm-path' title='"+esc(path)+"'>"+esc(dir)+"</div>":"")+
+      "<div class='sm-btns'>"+(path?"<button type='button' class='sm-open'>한글에서 열기</button>":"")+"<button type='button' class='sm-ok'>확인</button></div></div>";
     document.body.appendChild(ov);
     function close(){ov.remove();document.removeEventListener('keydown',onKey);}
-    function onKey(e){if(e.key==='Escape'||e.key==='Enter')close();}
+    function openIt(){close();try{Neutralino.os.open(path);}catch(e){}}
+    function onKey(e){
+      if(e.key==='Escape')close();
+      else if(e.key==='Enter'){e.preventDefault();var f=document.activeElement;if(f&&f.classList&&f.classList.contains('sm-open'))openIt();else close();}   /* Enter = 초점 버튼(기본 확인) */
+    }
     ov.querySelector('.sm-ok').addEventListener('click',close);
+    var ob=ov.querySelector('.sm-open');if(ob)ob.addEventListener('click',openIt);
     ov.addEventListener('click',function(e){if(e.target===ov)close();});
     document.addEventListener('keydown',onKey);
     try{ov.querySelector('.sm-ok').focus();}catch(e){}
@@ -671,6 +643,43 @@ window.__resolveLocalImages=async function(src){
   document.addEventListener("keydown",function(e){
     if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&(e.key==="s"||e.key==="S")){e.preventDefault();window.__saveMd();}
   },true);
+})();
+
+/* ===== md 편집기: Tab / Shift+Tab 들여쓰기 (VSCode 유사, MDeautify 이식) =====
+   - Tab: 커서 위치에 공백 2칸 삽입 / 선택 있으면 대상 줄들 들여쓰기
+   - Shift+Tab: 현재 줄(또는 선택 줄들) 내어쓰기(앞 공백 최대 2칸 또는 탭 1개 제거)
+   - Alt/Ctrl/Meta+Tab 은 가로채지 않음(OS 창 전환 등 유지)
+   - execCommand 로 편집해 네이티브 실행취소(Ctrl+Z) 스택을 보존(input 이벤트 → 미러·탭 ●·미리보기도 그대로 따라옴)
+   목록 들여쓰기 깊이가 □ ○ ▪ - 단계를 정하는 앱이라 Tab 으로 바로 단계를 바꿀 수 있어야 한다(예전엔 Tab 이 편집기 밖으로 초점을 옮겼다). */
+(function(){
+  var ta=document.getElementById("editor"),mirror=document.getElementById("raw");if(!ta)return;
+  var UNIT="  ";
+  function countNL(s){var n=0,i=0;for(;i<s.length;i++)if(s.charCodeAt(i)===10)n++;return n;}
+  function synced(){if(mirror){mirror.scrollTop=ta.scrollTop;mirror.scrollLeft=ta.scrollLeft;}}
+  ta.addEventListener("keydown",function(e){
+    if(e.key!=="Tab"||e.altKey||e.ctrlKey||e.metaKey)return;   /* Alt/Ctrl/Meta+Tab 은 OS/브라우저에 양보 */
+    e.preventDefault();
+    var val=ta.value,start=ta.selectionStart,end=ta.selectionEnd;
+    if(start===end&&!e.shiftKey){document.execCommand("insertText",false,UNIT);synced();return;}   /* 단순 삽입 */
+    var ls=val.lastIndexOf("\n",start-1)+1;                    /* 첫 줄 시작 오프셋 */
+    var le=val.indexOf("\n",end);if(le<0)le=val.length;        /* 마지막 줄 끝 오프셋 */
+    var lines=val.slice(ls,le).split("\n");
+    if(e.shiftKey){                                            /* 내어쓰기 */
+      var rm0=((lines[0]||"").match(/^( {1,2}|\t)/)||[""])[0].length;
+      lines=lines.map(function(ln){var m=ln.match(/^( {1,2}|\t)/);return m?ln.slice(m[0].length):ln;});
+      var nb=lines.join("\n");
+      ta.setSelectionRange(ls,le);document.execCommand("insertText",false,nb);
+      if(start===end){var np=Math.max(ls,start-rm0);ta.setSelectionRange(np,np);}
+      else ta.setSelectionRange(ls,ls+nb.length);
+    }else{                                                     /* 들여쓰기(선택 줄들) */
+      var uS=1+countNL(val.slice(ls,start)),uE=1+countNL(val.slice(ls,end));
+      lines=lines.map(function(ln){return UNIT+ln;});
+      var nb2=lines.join("\n");
+      ta.setSelectionRange(ls,le);document.execCommand("insertText",false,nb2);
+      ta.setSelectionRange(start+UNIT.length*uS,end+UNIT.length*uE);
+    }
+    synced();
+  });
 })();
 
 /* ===== ZIP 저장: 현재 MD + 풀(window.__drop)의 이미지들을 무압축(store) zip으로 묶어 저장 ===== */

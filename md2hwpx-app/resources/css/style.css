@@ -150,9 +150,9 @@ body.mdocify-frame #pages .content p{margin:4px 0;}
 body.mdocify-frame #pages .content ul,body.mdocify-frame #pages .content ol{margin:4px 0;}
 body.mdocify-frame #pages .content li{margin:1px 0;}
 body.mdocify-frame #pages .content table{margin:4px 0;}
-/* 번호목록을 산출물처럼 'N)' 로(기본 ol 은 'N.') */
+/* 번호목록을 산출물처럼 'N)' 로(기본 ol 은 'N.') — 테두리와 상관없이(산출물은 늘 'N)') */
 @counter-style mdocify-paren{system:extends decimal;suffix:") ";}
-body.mdocify-frame #pages .content ol{list-style-type:mdocify-paren;}
+.content ol{list-style-type:mdocify-paren;}
 /* 표 셀 안쪽 여백을 산출물 cellMargin 360(≈1.3mm 사방)에 맞춤 */
 body.mdocify-frame #pages .content td,body.mdocify-frame #pages .content th{padding:1.3mm;}
 /* 이미지 크기·간격을 산출물과 일치: 최대폭 162.8mm(=CONTENT_W), 상하 margin 축소(산출물은 문단 줄간격만) → 미리보기 페이지 누적 드리프트 제거 */
@@ -225,6 +225,10 @@ body.drag .drop-box{border-color:var(--accent);background:color-mix(in srgb,var(
 .saved-modal .sm-msg{font-size:13.5px;line-height:1.7;color:var(--tm-fg2,#475569);margin-bottom:20px;}
 .saved-modal .sm-ok{background:var(--accent,#2563eb);color:#fff;border:0;border-radius:9px;padding:10px 32px;font-size:14px;font-weight:700;cursor:pointer;transition:filter .12s;}
 .saved-modal .sm-ok:hover{filter:brightness(1.08);}
+.saved-modal .sm-path{font-size:11.5px;line-height:1.5;color:var(--tm-fg2,#64748b);opacity:.85;margin:-8px 0 18px;overflow-wrap:anywhere;}   /* 저장 폴더 */
+.saved-modal .sm-btns{display:flex;gap:8px;justify-content:center;}
+.saved-modal .sm-open{background:transparent;color:var(--accent,#2563eb);border:1px solid var(--accent,#2563eb);border-radius:9px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;transition:background .12s;}
+.saved-modal .sm-open:hover{background:color-mix(in srgb,var(--accent,#2563eb) 10%,transparent);}
 
 /* 정부양식 표지: 고객사(상단) · 회색박스[사업명+제목] · 날짜 · 작성기관(하단), 세로 분산·가운데 정렬 */
 .gov-cover{display:flex;flex-direction:column;align-items:center;text-align:center;min-height:240mm;padding:44mm 0 18mm;color:#000;box-sizing:border-box;font-family:"바탕체","함초롬바탕","맑은 고딕","Malgun Gothic",serif;break-after:page;}   /* 글꼴 바탕체(원본과 동일)·상단 여백 크게 */
@@ -274,7 +278,7 @@ body.drag .drop-box{border-color:var(--accent);background:color-mix(in srgb,var(
 .content hr{border:0;border-top:2px solid #e2e8f0;margin:20px 0;}
 .content a{color:var(--accent);text-decoration:underline;text-underline-offset:2px;}
 .content del{color:#94a3b8;}
-.content ul:has(input[type=checkbox]){list-style:none;padding-left:4px;}
+.content ul:has(input[type=checkbox]){list-style:none;}
 .content li:has(> input[type=checkbox]){list-style:none;}
 .content li input[type=checkbox]{margin:0 8px 0 0;transform:translateY(1px);accent-color:var(--accent);width:14px;height:14px;}
 .content .diag-unsupported{background:color-mix(in srgb, var(--accent) 6%, #fff);border:1px dashed var(--accent);border-radius:8px;padding:10px 14px;text-align:left;color:var(--brand);}
@@ -380,29 +384,40 @@ body.loaded #fileBadge{display:inline-flex;}
 
 /* ===== 정부 양식 미리보기 테마 (hwpx 산출물과 룩 일치) ===== */
 /* hwpx charPr 절대 크기로 일치: 본문10pt·목록(본문단계)12pt·제목17/14/13/12pt·표10pt, 줄간격160% */
-.content{font-family:"함초롬바탕","맑은 고딕","Malgun Gothic",sans-serif;color:#000;font-size:10pt;line-height:1.45;}   /* 줄높이: 스펙 160%지만 한글 실제 렌더가 더 촘촘 → 쪽수 일치용 보정(1.6→1.45, 캘리브레이션 중) */
-.content p{font-size:10pt;margin:2px 0;white-space:pre-wrap;}   /* 촘촘한 간격 + 앞 공백 보존(산출물처럼 '-' 들여쓰기 유지, 줄바꿈 시 여백 복귀) */
-.content li{margin:1px 0;}
+.content{font-family:"맑은 고딕","Malgun Gothic",sans-serif;color:#000;font-size:10pt;line-height:1.45;}   /* 줄높이: 스펙 160%지만 한글 실제 렌더가 더 촘촘 → 쪽수 일치용 보정(1.6→1.45, 캘리브레이션 중) */
+.content p{font-family:"맑은 고딕","Malgun Gothic",sans-serif;font-size:10pt;margin:2px 0;white-space:pre-wrap;}   /* 촘촘한 간격 + 앞 공백 보존(산출물처럼 '-' 들여쓰기 유지, 줄바꿈 시 여백 복귀) */
+/* 글꼴도 산출물 글자 모양대로: 바탕글(문단)=맑은 고딕, 목록(본문 1~4단계)·제목·표·목차=한컴바탕 — v1.3.0(예전엔 전부 함초롬바탕) */
+.content li,.content li>p,.content h1,.content h2,.content h3,.content h4,.content h5,.content h6,.content th,.content td,.content td p,.content th p,.content .mdocify-toc{font-family:"한컴바탕","함초롬바탕","HCR Batang",serif;}
+.content li{margin:1px 0;position:relative;}
 .content td p,.content th p{margin:0;}   /* 셀 내부 줄바꿈 문단은 여백 0(줄바꿈만) */
 .content li{font-size:12pt;}
+.content li>p{font-size:inherit;}   /* 느슨한 목록(항목 사이 빈 줄)도 12pt — 산출물 본문 단계와 같게(예전엔 문단 규칙 10pt 에 밀렸다) */
+.content li li li li{font-size:11pt;}   /* 본문 4단계 = 11pt */
 .content h1,.content h2,.content h3,.content h4,.content h5,.content h6{border:none !important;padding:0 !important;letter-spacing:0;font-weight:700;color:#000;}
+/* 제목 2~4단계 왼쪽 여백 = 산출물 제목 단계(1000·1500·2500 HWPUNIT ≈ 3.53·5.29·8.82mm), H5·H6 은 4단계 모양 */
 .content h1{font-size:17pt;margin:16px 0 8px;}
-.content h2{font-size:14pt;margin:13px 0 6px;}
-.content h3{font-size:13pt;margin:11px 0 5px;}
-.content h4,.content h5,.content h6{font-size:12pt;margin:9px 0 4px;}
+.content h2{font-size:14pt;margin:13px 0 6px 3.53mm;}
+.content h3{font-size:13pt;margin:11px 0 5px 5.29mm;}
+.content h4,.content h5,.content h6{font-size:12pt;margin:9px 0 4px 8.82mm;}
 .content .secnum{font-weight:700;margin-right:.35em;}
 /* 표: 회색 머리 + 검정 그리드 (표제목/표내용 10pt) */
 .content table{border:1px solid #000;font-size:10pt;}
 .content th{background:#F2F3F9 !important;color:#404040 !important;border:1px solid #000;font-weight:700;text-align:center;font-size:10pt;}
 .content td{border:1px solid #000;font-size:10pt;}
-/* 불릿 위계 □ ○ ▪ - (정부문서식) */
-.content ul{list-style:none;padding-left:1.2em;}
-.content ul>li{position:relative;}
-.content ul>li::before{content:"□";position:absolute;left:-1.2em;color:#000;}
-.content ul ul>li::before{content:"○";}
-.content ul ul ul>li::before{content:"▪";font-size:.85em;top:.1em;}
-.content ul ul ul ul>li::before{content:"-";}
+/* 불릿 위계 □ ○ ▪ - (정부문서식) — 단계는 목록 중첩 깊이(번호 목록 안 글머리 목록도 2단계 ○, 산출물과 같게).
+   글머리표 자리 = 산출물 본문 1~4단계 왼쪽 여백(1830·4330·6330·8330 HWPUNIT ≈ 6.46·15.28·22.33·29.39mm),
+   글자는 그 뒤 글머리표 폭(□·'1)'+공백 = 1.5em, 4단계 '-'+공백 = 1em)부터 → 줄이 넘어가면 글자에 맞춰 시작(산출물 내어쓰기와 같음) */
+.content ul,.content ol{padding-left:12.81mm;}
+.content li>ul,.content li>ol{padding-left:8.82mm;}
+.content li li>ul,.content li li>ol{padding-left:7.05mm;}
+.content li li li>ul,.content li li li>ol{padding-left:4.59mm;}
+.content ul{list-style:none;}
+.content ul>li::before{content:"□";position:absolute;left:-1.5em;color:#000;}
+.content li ul>li::before{content:"○";}
+.content li li ul>li::before{content:"▪";font-size:.85em;top:.1em;left:-1.76em;}
+.content li li li ul>li::before{content:"-";left:-1em;font-size:1em;top:0;}
 .content ul:has(input[type=checkbox])>li::before,.content li:has(> input[type=checkbox])::before{content:"";}
+.content li>input[type=checkbox]:first-child{font-size:inherit;position:absolute;left:-1.5em;top:.3em;margin:0;transform:none;}   /* 할 일 상자는 글머리표 자리에(산출물 ☐/☑ 와 같게) */
 
 /* 목차(```toc): 점선 leader + 우측 정렬 쪽번호 (정부양식 목차 재현) */
 .content .mdocify-toc{margin:10px 0;}
